@@ -56,7 +56,7 @@ export async function allowRequest(request: Request, action: string, limit: numb
     p_limit: limit,
     p_window_seconds: windowSeconds
   });
-  if (error) throw new Error("Request limit check failed.");
+  if (error) throw new Error(`Request limit check failed (${error.code}): ${error.message}`);
   return data === true;
 }
 
