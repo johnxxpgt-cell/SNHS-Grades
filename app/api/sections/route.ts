@@ -16,7 +16,8 @@ export async function GET() {
       .order("section_name");
     if (error) throw error;
     return Response.json({ sections: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
+  } catch (error) {
+    console.error("[sections] Could not load class sections:", error instanceof Error ? error.message : "Unknown error");
     return Response.json({ error: "Class sections are temporarily unavailable." }, { status: 503 });
   }
 }

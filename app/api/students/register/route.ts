@@ -71,6 +71,7 @@ export async function POST(request: Request) {
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("The registration form could not be read.");
+    console.error("[students/register] Registration request failed:", error instanceof Error ? error.message : "Unknown error");
     return jsonError("We could not complete registration. Please try again shortly.", 503);
   }
 }
