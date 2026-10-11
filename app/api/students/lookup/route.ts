@@ -1,5 +1,6 @@
+import { timingSafeEqual } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, digestStudentAccess, jsonError } from "@/lib/server/security";
+import { allowRequest, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,29 +12,80 @@ export async function POST(request: Request) {
     }
     const rawBody: unknown = await request.json();
     if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) return jsonError("The grade lookup could not be read.");
-    const body = rawBody as { fullName?: unknown; lrn?: unknown };
+    const body = rawBody as { fullName?: unknown; lrn?: unknown; pin?: unknown };
     const fullName = typeof body.fullName === "string" ? body.fullName.trim().replace(/\s+/g, " ") : "";
     const lrn = typeof body.lrn === "string" ? body.lrn.replace(/\D/g, "") : "";
-    if (fullName.length < 3 || fullName.length > 120 || lrn.length < 8 || lrn.length > 20) {
-      return jsonError("We couldn’t match those details. Check your full name and LRN.", 401);
+    const pin = typeof body.pin === "string" ? body.pin : "";
+    if (fullName.length < 3 || fullName.length > 120 || lrn.length < 8 || lrn.length > 20 || !/^\d{4}$/.test(pin)) {
+      return jsonError("We couldn’t match those details. Check your full name, LRN, and 4-digit PIN.", 401);
     }
 
     const admin = getSupabaseAdmin();
     const accessDigest = digestStudentAccess(fullName, lrn);
+    if (!(await allowRequest(request, "student-grade-pin", 5, 900, accessDigest))) {
+      return jsonError("Too many PIN attempts for this student record. Please wait 15 minutes and try again.", 429);
+    }
     const { data: student, error } = await admin
       .from("students")
-      .select("id, full_name, avatar_webp_data_url, section:teacher_sections(grade_level, section_name, academic_year)")
+      .select("id, full_name, avatar_webp_data_url, pin_digest, section:teacher_sections(grade_level, section_name, academic_year)")
       .eq("access_digest", accessDigest)
       .maybeSingle();
     if (error) throw error;
-    if (!student) return jsonError("We couldn’t match those details. Check your full name and LRN.", 401);
+    if (!student) return jsonError("We couldn’t match those details. Check your full name, LRN, and 4-digit PIN.", 401);
 
-    const { data: grades, error: gradeError } = await admin
-      .from("subject_grades")
-      .select("id, subject_name, quarter_1, quarter_2, quarter_3, quarter_4, updated_at")
-      .eq("student_id", student.id)
-      .order("subject_name");
-    if (gradeError) throw gradeError;
+    const suppliedPinDigest = digestStudentPin(pin, accessDigest);
+    const savedPinDigest = typeof student.pin_digest === "string" ? student.pin_digest.trim() : "";
+    if (savedPinDigest) {
+      const savedDigestBytes = Buffer.from(savedPinDigest, "hex");
+      const suppliedDigestBytes = Buffer.from(suppliedPinDigest, "hex");
+      if (savedDigestBytes.length !== suppliedDigestBytes.length || !timingSafeEqual(savedDigestBytes, suppliedDigestBytes)) {
+        return jsonError("We couldn’t match those details. Check your full name, LRN, and 4-digit PIN.", 401);
+      }
+    } else {
+      // Existing records from before PINs were introduced can set one on their first successful lookup.
+      const { data: claimedRecord, error: claimError } = await admin
+        .from("students")
+        .update({ pin_digest: suppliedPinDigest })
+        .eq("id", student.id)
+        .is("pin_digest", null)
+        .select("id")
+        .maybeSingle();
+      if (claimError) throw claimError;
+      if (!claimedRecord) {
+        const { data: currentRecord, error: currentError } = await admin
+          .from("students")
+          .select("pin_digest")
+          .eq("id", student.id)
+          .maybeSingle();
+        if (currentError) throw currentError;
+        const currentPinDigest = typeof currentRecord?.pin_digest === "string" ? currentRecord.pin_digest.trim() : "";
+        const currentDigestBytes = Buffer.from(currentPinDigest, "hex");
+        const suppliedDigestBytes = Buffer.from(suppliedPinDigest, "hex");
+        if (currentDigestBytes.length !== suppliedDigestBytes.length || !timingSafeEqual(currentDigestBytes, suppliedDigestBytes)) {
+          return jsonError("We couldn’t match those details. Check your full name, LRN, and 4-digit PIN.", 401);
+        }
+      }
+    }
+
+    const [gradeResult, assessmentResult, commentResult] = await Promise.all([
+      admin.from("subject_grades")
+        .select("id, subject_name, quarter_1, quarter_2, quarter_3, quarter_4, updated_at")
+        .eq("student_id", student.id)
+        .order("subject_name"),
+      admin.from("student_assessments")
+        .select("id, category, assessment_name, score, max_score, assessed_on, updated_at")
+        .eq("student_id", student.id)
+        .order("assessed_on", { ascending: false })
+        .order("updated_at", { ascending: false }),
+      admin.from("student_teacher_comments")
+        .select("comment, updated_at")
+        .eq("student_id", student.id)
+        .maybeSingle()
+    ]);
+    if (gradeResult.error) throw gradeResult.error;
+    if (assessmentResult.error) throw assessmentResult.error;
+    if (commentResult.error) throw commentResult.error;
+    const grades = gradeResult.data;
     const subjects = (grades ?? []).map((grade) => {
       const quarters = [grade.quarter_1, grade.quarter_2, grade.quarter_3, grade.quarter_4]
         .map((value) => value === null ? null : Number(value));
@@ -46,13 +98,25 @@ export async function POST(request: Request) {
         updatedAt: grade.updated_at
       };
     });
+    const assessments = (assessmentResult.data ?? []).map((assessment) => ({
+      id: assessment.id,
+      category: assessment.category,
+      name: assessment.assessment_name,
+      score: Number(assessment.score),
+      maxScore: Number(assessment.max_score),
+      assessedOn: assessment.assessed_on,
+      updatedAt: assessment.updated_at
+    }));
     return Response.json({
       student: {
         fullName: student.full_name,
         avatar: student.avatar_webp_data_url,
         section: student.section
       },
-      subjects
+      subjects,
+      assessments,
+      teacherComment: commentResult.data?.comment ?? null,
+      commentUpdatedAt: commentResult.data?.updated_at ?? null
     }, { headers: { "Cache-Control": "no-store, private" } });
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("The grade lookup could not be read.");

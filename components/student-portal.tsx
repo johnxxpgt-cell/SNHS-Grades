@@ -7,6 +7,7 @@ import { toWebpDataUrl } from "@/lib/student-images";
 
 type SchoolSection = { id: string; grade_level: number; section_name: string; academic_year: string };
 type Subject = { id: string; subject: string; quarters: (number | null)[]; finalGrade: number | null; updatedAt: string };
+type Assessment = { id: string; category: "Quiz" | "Activity" | "Exam"; name: string; score: number; maxScore: number; assessedOn: string; updatedAt: string };
 type LookupResult = {
   student: {
     fullName: string;
@@ -14,6 +15,9 @@ type LookupResult = {
     section: { grade_level: number; section_name: string; academic_year: string };
   };
   subjects: Subject[];
+  assessments: Assessment[];
+  teacherComment: string | null;
+  commentUpdatedAt: string | null;
 };
 
 export function StudentPortal() {
@@ -22,6 +26,7 @@ export function StudentPortal() {
   const [sectionLoading, setSectionLoading] = useState(false);
   const [fullName, setFullName] = useState("");
   const [lrn, setLrn] = useState("");
+  const [pin, setPin] = useState("");
   const [birthday, setBirthday] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [gender, setGender] = useState("Prefer not to say");
@@ -65,11 +70,12 @@ export function StudentPortal() {
     try {
       const response = await fetch("/api/students/lookup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, lrn })
+        body: JSON.stringify({ fullName, lrn, pin })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "We couldn’t retrieve those grades.");
       setResult(payload as LookupResult);
+      setPin("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "We couldn’t retrieve those grades.");
     } finally {
@@ -83,12 +89,12 @@ export function StudentPortal() {
     try {
       const response = await fetch("/api/students/register", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, lrn, birthday, sectionId, gender, avatar })
+        body: JSON.stringify({ fullName, lrn, pin, birthday, sectionId, gender, avatar })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Registration could not be completed.");
       setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}.`);
-      setFullName(""); setLrn(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarName("");
+      setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarName("");
       setMode("lookup");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Registration could not be completed.");
@@ -122,7 +128,7 @@ export function StudentPortal() {
             <div className="portal-intro">
               <span className="section-kicker">STUDENT SERVICES</span>
               <h1>Your school record,<br /><em>right at hand.</em></h1>
-              <p>Use your full name and LRN to view the grades recorded by your teacher.</p>
+              <p>Use your full name, LRN, and private 4-digit PIN to view grades and teacher feedback.</p>
             </div>
             <div className="portal-workspace">
               <div className="portal-tabs" role="tablist" aria-label="Student options">
@@ -133,10 +139,11 @@ export function StudentPortal() {
               {mode === "lookup" ? (
                 <div className="form-panel">
                   <div className="form-heading"><div><span className="form-overline">STUDENT ACCESS</span><h2>Find your grades</h2></div><span className="round-icon" aria-hidden="true">⌕</span></div>
-                  <p className="form-description">Enter your details exactly as they were registered. Your LRN stays private and is never shown on the report.</p>
+                  <p className="form-description">Enter your registered name, LRN, and 4-digit PIN. Your LRN and PIN stay private and are never shown on the report.</p>
                   <form className="form-stack" onSubmit={handleLookup}>
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="e.g. Juan Dela Cruz" /></label>
                     <label className="field"><span>Learner Reference Number <small>LRN</small></span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="Enter your LRN" /></label>
+                    <label className="field"><span>4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Enter your PIN" /><small className="field-help">If your record existed before PINs were added, your first successful lookup saves the PIN you enter.</small></label>
                     <button className="button button-primary form-submit" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Looking up grades…</> : <>View my grades <span aria-hidden="true">→</span></>}</button>
                   </form>
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
@@ -153,6 +160,7 @@ export function StudentPortal() {
                       <label className="field"><span>LRN</span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="8–20 digits" /></label>
                       <label className="field"><span>Birthday</span><input type="date" value={birthday} onChange={(event) => setBirthday(event.target.value)} autoComplete="bday" required max={new Date().toISOString().slice(0, 10)} /></label>
                     </div>
+                    <label className="field"><span>Create a 4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Choose a private PIN" /><small className="field-help">Use this PIN with your name and LRN whenever you view your record.</small></label>
                     <label className="field"><span>Class section <small>Grade level is assigned automatically</small></span>
                       <select value={sectionId} onChange={(event) => setSectionId(event.target.value)} required disabled={sectionLoading || !sections.length}>
                         <option value="">{sectionLoading ? "Loading open sections…" : sections.length ? "Choose your section" : "No sections open for registration"}</option>
@@ -190,6 +198,8 @@ export function StudentPortal() {
                   {!result.subjects.length && <div className="empty-report"><span>✳</span><b>No grades posted yet</b><p>Your teacher hasn’t entered grades for this record. Check back later.</p></div>}
                 </div>
                 {result.subjects.length > 0 && <div className="report-legend"><span><i className="legend-pass" /> Passing</span><span><i /> Grade not yet posted</span></div>}
+                {result.assessments.length > 0 && <section className="assessment-report"><div className="assessment-report-heading"><div><span className="form-overline">CLASSWORK & TESTS</span><h3>Assessment scores</h3></div><span>{result.assessments.length} recorded</span></div><div className="assessment-report-table-wrap"><table className="assessment-report-table"><thead><tr><th>TYPE</th><th>ASSESSMENT</th><th>DATE</th><th>SCORE</th><th>RESULT</th></tr></thead><tbody>{result.assessments.map((assessment) => <tr key={assessment.id}><td><span className={`assessment-kind ${assessment.category.toLowerCase()}`}>{assessment.category}</span></td><td>{assessment.name}</td><td>{new Date(`${assessment.assessedOn}T00:00:00`).toLocaleDateString()}</td><td>{assessment.score} / {assessment.maxScore}</td><td><span className="grade-pill">{Math.round((assessment.score / assessment.maxScore) * 100)}%</span></td></tr>)}</tbody></table></div></section>}
+                {result.teacherComment && <section className="student-teacher-comment"><div><span className="form-overline">A NOTE FROM YOUR TEACHER</span>{result.commentUpdatedAt && <small>Updated {new Date(result.commentUpdatedAt).toLocaleDateString()}</small>}</div><p>{result.teacherComment}</p></section>}
                 <p className="report-footnote">For questions about a grade, please contact your subject teacher.</p>
               </section>
             ) : (
@@ -199,7 +209,7 @@ export function StudentPortal() {
                 <h2>See each subject,<br /><em>one term at a time.</em></h2>
                 <p>Your report keeps every subject and quarter together, with the final average clearly marked.</p>
                 <div className="aside-rule" />
-                <div className="aside-steps"><div><span>01</span><p>Enter your name and LRN</p></div><div><span>02</span><p>Review your latest grades</p></div></div>
+                <div className="aside-steps"><div><span>01</span><p>Enter your name, LRN, and PIN</p></div><div><span>02</span><p>Review grades and teacher feedback</p></div></div>
                 <div className="aside-bottom"><span className="mini-shield">✓</span> Protected student records</div>
               </div>
             )}

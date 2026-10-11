@@ -27,6 +27,8 @@ create table if not exists public.students (
   -- HMAC digests let the server detect duplicates and verify access without retaining the LRN.
   lrn_digest char(64) not null unique,
   access_digest char(64) not null unique,
+  -- PINs are stored as server-keyed HMAC digests; null supports existing records during upgrade.
+  pin_digest char(64),
   date_of_birth_encrypted text not null,
   gender text not null check (gender in ('Female', 'Male', 'Prefer not to say')),
   avatar_webp_data_url text check (avatar_webp_data_url is null or (char_length(avatar_webp_data_url) <= 520000 and avatar_webp_data_url like 'data:image/webp;base64,%')),
@@ -47,8 +49,31 @@ create table if not exists public.subject_grades (
   constraint subject_grades_unique_student_subject unique (student_id, subject_name)
 );
 
+alter table public.students add column if not exists pin_digest char(64);
+
+create table if not exists public.student_assessments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references public.students (id) on delete cascade,
+  category text not null check (category in ('Quiz', 'Activity', 'Exam')),
+  assessment_name text not null check (char_length(assessment_name) between 2 and 100),
+  score numeric(8,2) not null check (score >= 0),
+  max_score numeric(8,2) not null check (max_score > 0),
+  assessed_on date not null default current_date,
+  updated_by uuid not null references auth.users (id),
+  updated_at timestamptz not null default now(),
+  constraint student_assessments_score_within_max check (score <= max_score)
+);
+
+create table if not exists public.student_teacher_comments (
+  student_id uuid primary key references public.students (id) on delete cascade,
+  comment text not null check (char_length(btrim(comment)) between 1 and 1000),
+  updated_by uuid not null references auth.users (id),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists students_section_idx on public.students (section_id, full_name);
 create index if not exists subject_grades_student_idx on public.subject_grades (student_id, subject_name);
+create index if not exists student_assessments_student_date_idx on public.student_assessments (student_id, assessed_on desc);
 
 -- All self-service Auth sign-ups are teacher accounts. Their first class is created inactive;
 -- after email verification and sign-in, the teacher can activate it from the portal.
@@ -95,6 +120,8 @@ alter table public.teacher_profiles enable row level security;
 alter table public.teacher_sections enable row level security;
 alter table public.students enable row level security;
 alter table public.subject_grades enable row level security;
+alter table public.student_assessments enable row level security;
+alter table public.student_teacher_comments enable row level security;
 
 drop policy if exists "Teachers read own profile" on public.teacher_profiles;
 create policy "Teachers read own profile" on public.teacher_profiles
@@ -168,6 +195,92 @@ create policy "Teachers delete grades in their sections" on public.subject_grade
     )
   );
 
+drop policy if exists "Teachers read assessments in their sections" on public.student_assessments;
+create policy "Teachers read assessments in their sections" on public.student_assessments
+  for select to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_assessments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers add assessments in their sections" on public.student_assessments;
+create policy "Teachers add assessments in their sections" on public.student_assessments
+  for insert to authenticated with check (
+    updated_by = (select auth.uid()) and exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_assessments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers update assessments in their sections" on public.student_assessments;
+create policy "Teachers update assessments in their sections" on public.student_assessments
+  for update to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_assessments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  ) with check (
+    updated_by = (select auth.uid()) and exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_assessments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers delete assessments in their sections" on public.student_assessments;
+create policy "Teachers delete assessments in their sections" on public.student_assessments
+  for delete to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_assessments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+
+drop policy if exists "Teachers read comments in their sections" on public.student_teacher_comments;
+create policy "Teachers read comments in their sections" on public.student_teacher_comments
+  for select to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_teacher_comments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers add comments in their sections" on public.student_teacher_comments;
+create policy "Teachers add comments in their sections" on public.student_teacher_comments
+  for insert to authenticated with check (
+    updated_by = (select auth.uid()) and exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_teacher_comments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers update comments in their sections" on public.student_teacher_comments;
+create policy "Teachers update comments in their sections" on public.student_teacher_comments
+  for update to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_teacher_comments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  ) with check (
+    updated_by = (select auth.uid()) and exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_teacher_comments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+drop policy if exists "Teachers delete comments in their sections" on public.student_teacher_comments;
+create policy "Teachers delete comments in their sections" on public.student_teacher_comments
+  for delete to authenticated using (
+    exists (
+      select 1 from public.students st
+      join public.teacher_sections sec on sec.id = st.section_id
+      where st.id = student_teacher_comments.student_id and sec.teacher_id = (select auth.uid())
+    )
+  );
+
 -- A server-only, atomic per-IP limiter for registration and public grade lookup.
 create table if not exists public.request_limits (
   id uuid primary key default gen_random_uuid(),
@@ -216,15 +329,19 @@ grant execute on function public.consume_request_limit(text, text, integer, inte
 -- RLS policies remain the data-access boundary for teacher sessions.
 revoke usage on schema public from public, anon;
 grant usage on schema public to authenticated, service_role;
-revoke all on public.teacher_profiles, public.teacher_sections, public.students, public.subject_grades
+revoke all on public.teacher_profiles, public.teacher_sections, public.students, public.subject_grades, public.student_assessments, public.student_teacher_comments
   from public, anon, authenticated, service_role;
 grant select, update on public.teacher_profiles to authenticated;
 grant select, insert, update, delete on public.teacher_sections to authenticated;
-grant select on public.students to authenticated;
+grant select (id, full_name, gender, avatar_webp_data_url, section_id, registered_at) on public.students to authenticated;
 grant select, insert, update, delete on public.subject_grades to authenticated;
+grant select, insert, update, delete on public.student_assessments to authenticated;
+grant select, insert, update, delete on public.student_teacher_comments to authenticated;
 -- Server routes use a secret key and need explicit table grants on newer Supabase projects.
 grant select, insert, update, delete on public.teacher_profiles to service_role;
 grant select, insert, update, delete on public.teacher_sections to service_role;
 grant select, insert, update, delete on public.students to service_role;
 grant select, insert, update, delete on public.subject_grades to service_role;
+grant select, insert, update, delete on public.student_assessments to service_role;
+grant select, insert, update, delete on public.student_teacher_comments to service_role;
 revoke all on public.request_limits from public, anon, authenticated, service_role;

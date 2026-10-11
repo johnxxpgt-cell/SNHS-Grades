@@ -34,6 +34,12 @@ export function digestStudentAccess(name: string, lrn: string) {
     .digest("hex");
 }
 
+export function digestStudentPin(pin: string, accessDigest: string) {
+  return createHmac("sha256", secret())
+    .update(`student-pin\0${accessDigest}\0${pin}`)
+    .digest("hex");
+}
+
 export function encryptStudentBirthday(birthday: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
@@ -42,16 +48,19 @@ export function encryptStudentBirthday(birthday: string) {
   return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${ciphertext.toString("base64url")}`;
 }
 
-export function digestRequestIp(request: Request) {
+export function digestRequestIp(request: Request, subject?: string) {
+  if (subject) {
+    return createHmac("sha256", secret()).update(`request-subject\0${subject}`).digest("hex");
+  }
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const address = request.headers.get("x-real-ip") || forwarded || "unknown";
   return createHmac("sha256", secret()).update(`request-ip\0${address}`).digest("hex");
 }
 
-export async function allowRequest(request: Request, action: string, limit: number, windowSeconds: number) {
+export async function allowRequest(request: Request, action: string, limit: number, windowSeconds: number, subject?: string) {
   const admin = (await import("@/lib/supabase/admin")).getSupabaseAdmin();
   const { data, error } = await admin.rpc("consume_request_limit", {
-    p_ip_digest: digestRequestIp(request),
+    p_ip_digest: digestRequestIp(request, subject),
     p_action: action,
     p_limit: limit,
     p_window_seconds: windowSeconds

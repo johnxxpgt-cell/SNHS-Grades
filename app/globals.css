@@ -234,6 +234,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .report-legend i { width: 6px; height: 6px; border-radius: 50%; background: #c8cdd3; }
 .report-legend i.legend-pass { background: #6c9b7a; }
 .report-footnote { margin: 14px 18px 16px; padding-top: 12px; border-top: 1px solid #eff1f2; color: #929ba6; font-size: 8px; line-height: 1.5; }
+.assessment-report { margin: 15px 18px 0; border-top: 1px solid #eff1f2; }
+.assessment-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 0 7px; }
+.assessment-report-heading .form-overline { font-size: 7px; }
+.assessment-report-heading h3 { margin: 4px 0 0; color: var(--navy); font-family: var(--serif); font-size: 19px; font-weight: 400; }
+.assessment-report-heading > span { color: #8993a1; font-size: 8px; }
+.assessment-report-table-wrap { overflow-x: auto; }
+.assessment-report-table { width: 100%; min-width: 440px; border-collapse: collapse; text-align: left; }
+.assessment-report-table th { height: 27px; border-bottom: 1px solid #e8ebee; color: #8a94a1; font-size: 6px; font-weight: 700; letter-spacing: .08em; }
+.assessment-report-table td { height: 34px; padding: 4px 4px 4px 0; border-bottom: 1px solid #f0f1f3; color: #576579; font-size: 8px; }
+.assessment-report-table td:nth-last-child(-n+2) { text-align: right; }
+.assessment-kind { display: inline-block; padding: 4px 6px; color: #4e6388; background: #eff3f8; font-size: 7px; font-weight: 700; line-height: 1; white-space: nowrap; }
+.assessment-kind.activity { color: #58745f; background: #eef5ef; }
+.assessment-kind.exam { color: #86694a; background: #f7f1e7; }
+.student-teacher-comment { margin: 14px 18px 0; padding: 13px 14px; border-left: 2px solid #c7b17c; background: #faf8f3; }
+.student-teacher-comment > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.student-teacher-comment .form-overline { color: #776747; font-size: 7px; }
+.student-teacher-comment small { color: #9b927e; font-size: 7px; }
+.student-teacher-comment p { margin: 8px 0 0; color: #556174; font-size: 9px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .portal-footer { min-height: 55px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #e2e5e9; color: #8a94a2; font-size: 8px; }
 .portal-footer a { color: var(--navy); font-weight: 700; }
 
@@ -331,6 +349,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .remove-draft { position: absolute; top: -7px; right: -7px; width: 15px; height: 15px; display: grid; place-items: center; padding: 0; border: 1px solid #fff; border-radius: 50%; color: #fff; background: #a7645b; cursor: pointer; font-size: 10px; line-height: 1; }
 .add-subject { display: inline-block; margin-top: 11px; padding: 4px 0; border: 0; color: var(--blue); background: transparent; cursor: pointer; font-size: 8px; font-weight: 700; }
 .editor-save { width: 100%; min-height: 37px; margin-top: 11px; font-size: 9px; }
+.field-help { margin-top: -1px; color: #8993a1; font-size: 8px; font-weight: 400; line-height: 1.5; }
+.assessment-editor, .teacher-comment-editor { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eaedef; }
+.assessment-section-heading .form-overline { font-size: 7px; }
+.assessment-section-heading h3 { margin: 4px 0; color: var(--navy); font-family: var(--serif); font-size: 19px; font-weight: 400; }
+.assessment-section-heading p { margin: 0 0 12px; color: #8993a1; font-size: 8px; line-height: 1.55; }
+.assessment-form { display: grid; gap: 10px; }
+.assessment-form .field, .teacher-comment-editor .field { gap: 5px; font-size: 8px; }
+.assessment-form .field input, .assessment-form .field select { min-height: 35px; padding: 0 8px; font-size: 9px; }
+.assessment-points-row { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: end; gap: 7px; }
+.points-divider { padding-bottom: 10px; color: #8b95a2; font-size: 8px; }
+.assessment-form .editor-save, .teacher-comment-editor .editor-save { margin-top: 0; min-height: 35px; }
+.assessment-list { display: grid; margin-top: 12px; }
+.assessment-list-row { display: grid; grid-template-columns: minmax(0,1fr) auto 22px; align-items: center; gap: 7px; min-height: 47px; padding: 6px 0; border-top: 1px solid #eff1f2; }
+.assessment-list-detail { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 4px 6px; }
+.assessment-list-detail b { overflow: hidden; color: #46546a; font-size: 8px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.assessment-list-detail small { grid-column: 2; color: #939ca7; font-size: 7px; }
+.assessment-list-row > strong { color: #45536a; font-size: 9px; white-space: nowrap; }
+.assessment-list-row > strong small { color: #8b95a2; font-size: 7px; font-weight: 500; }
+.assessment-delete { width: 22px; height: 22px; padding: 0; border: 1px solid #e8e8e7; color: #a26459; background: #fff; cursor: pointer; font-size: 15px; line-height: 1; }
+.assessment-delete:disabled { opacity: .45; cursor: wait; }
+.assessment-empty { margin: 0; padding: 10px 0; border-top: 1px solid #eff1f2; color: #929ba6; font-size: 8px; }
+.teacher-comment-editor textarea { width: 100%; min-height: 85px; padding: 9px; border: 1px solid #dfe3e7; border-radius: 3px; color: #273750; outline: 0; background: #fff; font: 9px/1.6 var(--sans); resize: vertical; }
+.teacher-comment-editor textarea:focus { border-color: #778ab3; box-shadow: 0 0 0 3px rgba(45, 79, 149, .08); }
 .editor-note { display: flex; align-items: center; gap: 6px; margin: 13px 0 0; color: #909aa6; font-size: 7px; line-height: 1.5; }
 .editor-note .mini-shield { width: 14px; height: 14px; font-size: 8px; }
 .editor-empty { min-height: 326px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 16px 9px; }

@@ -1,6 +1,6 @@
 # SNHS Gradebook
 
-A responsive grade portal for Salvacion National High School. Students register into an open teacher section and look up their report with their full name and LRN. Teachers use Supabase Auth to manage their class roster and quarterly grades.
+A responsive grade portal for Salvacion National High School. Students register into an open teacher section and look up their report with their full name, LRN, and 4-digit PIN. Teachers use Supabase Auth to manage their class roster, quarterly grades, assessment scores, and student comments.
 
 ## Stack
 
@@ -13,7 +13,7 @@ A responsive grade portal for Salvacion National High School. Students register 
 Use Node.js 20.9 or later for Next.js 16.
 
 1. Create a Supabase project.
-2. Run [`supabase/schema.sql`](supabase/schema.sql) once in the Supabase SQL Editor.
+2. Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, run [`supabase/migrations/20261012_student_pin_assessments_comments.sql`](supabase/migrations/20261012_student_pin_assessments_comments.sql) to add the PIN, assessment, and comment tables without removing existing records.
 3. Copy [`.env.example`](.env.example) to `.env.local` and fill in the Supabase project URL, publishable key, server-only secret key, a random HMAC secret of at least 32 bytes, and a base64-encoded 32-byte AES key (for example, generate one with `openssl rand -base64 32`).
 4. Install packages with `npm install`, then run `npm run dev`.
 5. In Supabase Auth settings, enable email confirmation for teacher accounts and set the site URL plus redirect URLs for local development and the Vercel domain.
@@ -28,9 +28,9 @@ Import this project into Vercel and add the same five environment variables for 
 
 - Teacher passwords and sessions are managed by Supabase Auth.
 - Teacher profiles, sections, student rosters, and subject grades use Postgres row-level security. Teachers can read their own class records; student rows have no public table policy.
-- Student registration and grade lookup run through server-only endpoints using the Supabase secret key. The LRN is not stored in plaintext: the server stores keyed HMAC-SHA-256 digests, and comparisons happen server-side. Birthdays are encrypted with AES-256-GCM before they reach Postgres. Student lookup and registration requests are rate-limited in Postgres.
+- Student registration and grade lookup run through server-only endpoints using the Supabase secret key. The LRN and 4-digit PIN are not stored in plaintext: the server stores keyed HMAC-SHA-256 digests, and checks happen server-side. PIN lookups are rate-limited by network address and student record. Birthdays are encrypted with AES-256-GCM before they reach Postgres. Registration requests are rate-limited in Postgres.
 - Supabase provides database transport and storage encryption. Full names, gender, and profile image data remain personal information and are available only through the policies and endpoints described above. Base64 is an image encoding, not encryption.
-- The public grade lookup follows the requested full-name-plus-LRN flow. Do not share LRNs publicly; ask the school to change the access flow if a stronger student identity check is required.
+- Students use their full name, LRN, and PIN to look up grades, assessment scores, and the latest teacher comment. Existing records from before the PIN upgrade set their PIN on their first successful lookup. Do not share LRNs or PINs publicly.
 
 ## Routes
 

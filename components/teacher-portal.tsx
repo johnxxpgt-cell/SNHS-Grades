@@ -17,8 +17,21 @@ type GradeRow = {
   quarter_4: number | string | null;
   updated_by: string;
 };
-type StudentRow = { id: string; full_name: string; gender: string; avatar_webp_data_url: string | null; registered_at: string; subject_grades: GradeRow[] };
+type AssessmentRow = { id: string; category: "Quiz" | "Activity" | "Exam"; assessment_name: string; score: number | string; max_score: number | string; assessed_on: string; updated_by: string; updated_at: string };
+type StudentCommentRow = { comment: string; updated_by: string; updated_at: string };
+type StudentRow = { id: string; full_name: string; gender: string; avatar_webp_data_url: string | null; registered_at: string; subject_grades: GradeRow[]; student_assessments: AssessmentRow[]; student_teacher_comments: StudentCommentRow[] | StudentCommentRow | null };
 type GradeDraft = { subjectName: string; quarters: [string, string, string, string] };
+
+function teacherCommentFor(student?: StudentRow) {
+  const relation = student?.student_teacher_comments;
+  const row = Array.isArray(relation) ? relation[0] : relation;
+  return row?.comment ?? "";
+}
+
+function localDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 function academicYear() {
   return getCurrentAcademicYear();
@@ -58,6 +71,12 @@ export function TeacherPortal() {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [drafts, setDrafts] = useState<GradeDraft[]>([]);
+  const [assessmentCategory, setAssessmentCategory] = useState<AssessmentRow["category"]>("Quiz");
+  const [assessmentName, setAssessmentName] = useState("");
+  const [assessmentScore, setAssessmentScore] = useState("");
+  const [assessmentMaxScore, setAssessmentMaxScore] = useState("100");
+  const [assessmentDate, setAssessmentDate] = useState(localDate);
+  const [commentDraft, setCommentDraft] = useState("");
   const [search, setSearch] = useState("");
   const [showAddSection, setShowAddSection] = useState(false);
   const [newGradeLevel, setNewGradeLevel] = useState("7");
@@ -107,7 +126,7 @@ export function TeacherPortal() {
     setLoadingRoster(true); setError("");
     const { data, error: rosterError } = await supabase
       .from("students")
-      .select("id, full_name, gender, avatar_webp_data_url, registered_at, subject_grades(id, subject_name, quarter_1, quarter_2, quarter_3, quarter_4, updated_by)")
+      .select("id, full_name, gender, avatar_webp_data_url, registered_at, subject_grades(id, subject_name, quarter_1, quarter_2, quarter_3, quarter_4, updated_by), student_assessments(id, category, assessment_name, score, max_score, assessed_on, updated_by, updated_at), student_teacher_comments(comment, updated_by, updated_at)")
       .eq("section_id", classId)
       .order("full_name");
     if (rosterError) setError("We couldn’t load this class roster. Please refresh and try again.");
@@ -120,6 +139,7 @@ export function TeacherPortal() {
   useEffect(() => {
     const selected = students.find((student) => student.id === selectedStudentId);
     setDrafts(selected ? gradesToDrafts(selected.subject_grades ?? []) : []);
+    setCommentDraft(teacherCommentFor(selected));
   }, [selectedStudentId, students]);
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
@@ -211,8 +231,70 @@ export function TeacherPortal() {
     setBusy(false);
   }
 
+  async function handleAddAssessment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !selectedStudentId) return;
+    setBusy(true); setError(""); setNotice("");
+    const name = assessmentName.trim().replace(/\s+/g, " ");
+    const score = Number(assessmentScore);
+    const maxScore = Number(assessmentMaxScore);
+    if (name.length < 2 || name.length > 100) { setError("Enter an assessment name between 2 and 100 characters."); setBusy(false); return; }
+    if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0 || score < 0 || score > maxScore || maxScore > 100000) {
+      setError("Enter a score from 0 up to the maximum points. Maximum points must be greater than 0."); setBusy(false); return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate) || Number.isNaN(new Date(`${assessmentDate}T00:00:00`).getTime())) {
+      setError("Choose a valid assessment date."); setBusy(false); return;
+    }
+    const { error: insertError } = await supabase.from("student_assessments").insert({
+      student_id: selectedStudentId,
+      category: assessmentCategory,
+      assessment_name: name,
+      score,
+      max_score: maxScore,
+      assessed_on: assessmentDate,
+      updated_by: user.id
+    });
+    if (insertError) setError("The assessment score could not be saved. Check the score and try again.");
+    else {
+      setAssessmentName(""); setAssessmentScore(""); setAssessmentDate(localDate());
+      await loadRoster(selectedSectionId);
+      setNotice("Assessment score saved and shared with the student.");
+    }
+    setBusy(false);
+  }
+
+  async function handleDeleteAssessment(assessmentId: string) {
+    if (!supabase || !selectedStudentId) return;
+    setBusy(true); setError(""); setNotice("");
+    const { error: deleteError } = await supabase.from("student_assessments").delete().eq("id", assessmentId).eq("student_id", selectedStudentId);
+    if (deleteError) setError("That assessment could not be removed.");
+    else {
+      await loadRoster(selectedSectionId);
+      setNotice("Assessment removed from the student record.");
+    }
+    setBusy(false);
+  }
+
+  async function handleSaveComment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !selectedStudentId) return;
+    const comment = commentDraft.trim();
+    if (comment.length > 1000) { setError("Keep the teacher comment to 1,000 characters or fewer."); return; }
+    setBusy(true); setError(""); setNotice("");
+    const result = comment
+      ? await supabase.from("student_teacher_comments").upsert({ student_id: selectedStudentId, comment, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "student_id" })
+      : await supabase.from("student_teacher_comments").delete().eq("student_id", selectedStudentId);
+    if (result.error) setError("The teacher comment could not be saved.");
+    else {
+      await loadRoster(selectedSectionId);
+      setNotice(comment ? "Teacher comment saved and shared with the student." : "Teacher comment removed from the student record.");
+    }
+    setBusy(false);
+  }
+
   const selectedSection = sections.find((section) => section.id === selectedSectionId);
   const selectedStudent = students.find((student) => student.id === selectedStudentId);
+  const hasTeacherComment = Boolean(teacherCommentFor(selectedStudent));
   const visibleStudents = useMemo(() => students.filter((student) => student.full_name.toLocaleLowerCase().includes(search.toLocaleLowerCase().trim())), [students, search]);
   const classAverage = useMemo(() => {
     const values = students.map((student) => averageFor(student.subject_grades ?? [])).filter((value): value is number => value !== null);
@@ -263,6 +345,22 @@ export function TeacherPortal() {
                       {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                       {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
                       <p className="editor-note"><span className="mini-shield">✓</span> Only teachers assigned to this section can edit these records.</p>
+                      <section className="assessment-editor">
+                        <div className="assessment-section-heading"><span className="form-overline">CLASSWORK & TESTS</span><h3>Add an assessment score</h3><p>Scores are visible in the student portal as soon as they are saved.</p></div>
+                        <form className="assessment-form" onSubmit={handleAddAssessment}>
+                          <div className="field-row"><label className="field"><span>Type</span><select value={assessmentCategory} onChange={(event) => setAssessmentCategory(event.target.value as AssessmentRow["category"])}><option>Quiz</option><option>Activity</option><option>Exam</option></select></label><label className="field"><span>Date</span><input type="date" value={assessmentDate} onChange={(event) => setAssessmentDate(event.target.value)} required /></label></div>
+                          <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} required minLength={2} maxLength={100} placeholder="e.g. Fractions quiz" /></label>
+                          <div className="assessment-points-row"><label className="field"><span>Score</span><input type="number" inputMode="decimal" value={assessmentScore} onChange={(event) => setAssessmentScore(event.target.value)} required min="0" max="100000" step="0.01" placeholder="0" /></label><span className="points-divider">out of</span><label className="field"><span>Maximum points</span><input type="number" inputMode="decimal" value={assessmentMaxScore} onChange={(event) => setAssessmentMaxScore(event.target.value)} required min="0.01" max="100000" step="0.01" /></label></div>
+                          <button className="button button-primary editor-save" type="submit" disabled={busy}>{busy ? "Saving…" : "Add score"}</button>
+                        </form>
+                        <div className="assessment-list" aria-label="Saved assessment scores">
+                          {selectedStudent.student_assessments?.length ? selectedStudent.student_assessments.map((assessment) => <div className="assessment-list-row" key={assessment.id}><div className="assessment-list-detail"><span className={`assessment-kind ${assessment.category.toLowerCase()}`}>{assessment.category}</span><b>{assessment.assessment_name}</b><small>{assessment.assessed_on}</small></div><strong>{Number(assessment.score)}<small> / {Number(assessment.max_score)}</small></strong><button type="button" className="assessment-delete" onClick={() => { if (window.confirm(`Remove “${assessment.assessment_name}” from this student’s record?`)) void handleDeleteAssessment(assessment.id); }} disabled={busy} aria-label={`Remove ${assessment.assessment_name}`}>×</button></div>) : <p className="assessment-empty">No quiz, activity, or exam scores yet.</p>}
+                        </div>
+                      </section>
+                      <section className="teacher-comment-editor">
+                        <div className="assessment-section-heading"><span className="form-overline">TEACHER FEEDBACK</span><h3>Comment for this student</h3><p>This private teacher note appears on the student’s grade report.</p></div>
+                        <form onSubmit={handleSaveComment}><label className="field"><span>Comment <small>{commentDraft.length}/1,000</small></span><textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value.slice(0, 1000))} maxLength={1000} rows={4} placeholder="Write a helpful note about progress, effort, or next steps…" /></label><button className="button button-outline editor-save" type="submit" disabled={busy}>{busy ? "Saving…" : hasTeacherComment ? (commentDraft.trim() ? "Update comment" : "Remove comment") : "Share comment"}</button></form>
+                      </section>
                     </> : <div className="editor-empty"><span className="editor-empty-icon">✎</span><span className="form-overline">GRADE ENTRY</span><h2>Select a student<br />to get started.</h2><p>Choose a student from your roster to add or update their subject grades.</p></div>}
                   </section>
                 </div>
@@ -271,7 +369,7 @@ export function TeacherPortal() {
           </section>
         ) : (
           <div className="teacher-auth-layout">
-            <section className="teacher-auth-main"><div className="portal-intro"><span className="section-kicker">TEACHER SERVICES</span><h1>Good records make<br /><em>room to teach.</em></h1><p>Sign in to manage your class roster and record quarterly grades.</p></div>
+            <section className="teacher-auth-main"><div className="portal-intro"><span className="section-kicker">TEACHER SERVICES</span><h1>Good records make<br /><em>room to teach.</em></h1><p>Sign in to manage your class roster, quarterly grades, assessment scores, and feedback.</p></div>
               <div className="portal-workspace teacher-auth-workspace"><div className="portal-tabs" role="tablist" aria-label="Teacher account options"><button className={authMode === "signin" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "signin"} onClick={() => { setAuthMode("signin"); setError(""); setNotice(""); }}>Sign in <span>01</span></button><button className={authMode === "register" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "register"} onClick={() => { setAuthMode("register"); setError(""); setNotice(""); }}>Create teacher account <span>02</span></button></div>
                 <div className="form-panel"><div className="form-heading"><div><span className="form-overline">{authMode === "signin" ? "WELCOME BACK" : "TEACHER REGISTRATION"}</span><h2>{authMode === "signin" ? "Sign in to your class" : "Set up your classroom"}</h2></div><span className="round-icon" aria-hidden="true">{authMode === "signin" ? "↗" : "＋"}</span></div>
                   <p className="form-description">{authMode === "signin" ? "Use the email address and password linked to your teacher account." : "Your class section will be created with your account. Students who select it are automatically placed in your grade level."}</p>

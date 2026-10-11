@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, digestStudentAccess, digestStudentLrn, encryptStudentBirthday, jsonError } from "@/lib/server/security";
+import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, encryptStudentBirthday, jsonError } from "@/lib/server/security";
 import { MAX_AVATAR_DATA_URL_LENGTH } from "@/lib/constants";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
 
@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 type Registration = {
   fullName?: unknown;
   lrn?: unknown;
+  pin?: unknown;
   birthday?: unknown;
   sectionId?: unknown;
   gender?: unknown;
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
     const body = rawBody as Registration;
     const fullName = typeof body.fullName === "string" ? body.fullName.trim().replace(/\s+/g, " ") : "";
     const lrn = typeof body.lrn === "string" ? body.lrn.replace(/\D/g, "") : "";
+    const pin = typeof body.pin === "string" ? body.pin : "";
     const birthday = typeof body.birthday === "string" ? body.birthday : "";
     const sectionId = typeof body.sectionId === "string" ? body.sectionId : "";
     const gender = typeof body.gender === "string" ? body.gender : "Prefer not to say";
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
 
     if (fullName.length < 3 || fullName.length > 120) return jsonError("Enter your full name (3–120 characters).");
     if (lrn.length < 8 || lrn.length > 20) return jsonError("Enter a valid LRN using 8–20 digits.");
+    if (!/^\d{4}$/.test(pin)) return jsonError("Choose a 4-digit PIN to protect your grade report.");
     const parsedBirthday = /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? new Date(`${birthday}T00:00:00Z`) : null;
     if (!parsedBirthday || Number.isNaN(parsedBirthday.getTime()) || parsedBirthday.toISOString().slice(0, 10) !== birthday || birthday > new Date().toISOString().slice(0, 10)) {
       return jsonError("Enter a valid birthday.");
@@ -52,10 +55,12 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (sectionError || !section) return jsonError("That class is not accepting registrations. Refresh the list and try again.", 404);
 
+    const accessDigest = digestStudentAccess(fullName, lrn);
     const { error } = await admin.from("students").insert({
       full_name: fullName,
       lrn_digest: digestStudentLrn(lrn),
-      access_digest: digestStudentAccess(fullName, lrn),
+      access_digest: accessDigest,
+      pin_digest: digestStudentPin(pin, accessDigest),
       date_of_birth_encrypted: encryptStudentBirthday(birthday),
       gender,
       avatar_webp_data_url: avatar,
@@ -65,7 +70,7 @@ export async function POST(request: Request) {
     if (error) throw error;
 
     return Response.json({
-      message: "Registration received. You can now view your grades using your full name and LRN.",
+      message: "Registration received. Use your full name, LRN, and 4-digit PIN to view your grades.",
       gradeLevel: section.grade_level,
       sectionName: section.section_name
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
