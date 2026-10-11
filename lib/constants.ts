@@ -1,0 +1,1 @@
+export const MAX_AVATAR_DATA_URL_LENGTH = 520_000;
