@@ -146,6 +146,7 @@ export function TeacherPortal() {
       .select("id, full_name, gender, avatar_path, avatar_webp_data_url, registered_at, subject_grades(id, subject_name, semester_1, semester_2, semester_3, updated_by), student_assessments(id, category, assessment_name, score, max_score, assessed_on, updated_by, updated_at), student_teacher_comments(comment, updated_by, updated_at)")
       .eq("section_id", classId)
       .order("full_name");
+    if (rosterError) console.error("[teacher-portal] Roster query failed:", rosterError);
     if (rosterError) setError("We couldn’t load this class roster. Please refresh and try again.");
     const rows = (data ?? []) as (Omit<StudentRow, "avatar_url"> & { avatar_path: string | null; avatar_webp_data_url: string | null })[];
     const photoPaths = rows.flatMap((row) => row.avatar_path ? [row.avatar_path] : []);
