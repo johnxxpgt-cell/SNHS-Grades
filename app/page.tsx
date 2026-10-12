@@ -19,7 +19,7 @@ export default function HomePage() {
         <div className="hero-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> SALVACION NATIONAL HIGH SCHOOL · BUSUANGA</div>
           <h1>Stay connected<br /><em>to your progress.</em></h1>
-          <p className="hero-lede">See your quarterly grades and keep your school record close in one clear, secure student portal.</p>
+          <p className="hero-lede">See your grades across all three semesters and keep your school record close in one clear, secure student portal.</p>
           <div className="hero-actions">
             <Link href="/student" className="button button-primary">Open student portal <span aria-hidden="true">→</span></Link>
             <span className="hero-action-note">Grade lookup and student registration</span>
@@ -36,10 +36,10 @@ export default function HomePage() {
             <div className="report-school"><img src="/snhs-logo.webp" alt="" /><div><b>SNHS</b><small>GRADE SUMMARY</small></div></div>
             <div className="report-separator" />
             <div className="report-student"><span>LEARNER</span><b>Student name</b><small>Grade &amp; section</small></div>
-            <div className="report-grade-head"><span>SUBJECT</span><span>Q1</span><span>Q2</span><span>FINAL</span></div>
-            <div className="report-row"><span>Mathematics</span><b>92</b><b>89</b><strong>91</strong></div>
-            <div className="report-row"><span>Science</span><b>88</b><b>93</b><strong>91</strong></div>
-            <div className="report-row"><span>English</span><b>90</b><b>92</b><strong>91</strong></div>
+            <div className="report-grade-head"><span>SUBJECT</span><span>S1</span><span>S2</span><span>S3</span><span>FINAL</span></div>
+            <div className="report-row"><span>Mathematics</span><b>92</b><b>89</b><b>91</b><strong>91</strong></div>
+            <div className="report-row"><span>Science</span><b>88</b><b>93</b><b>91</b><strong>91</strong></div>
+            <div className="report-row"><span>English</span><b>90</b><b>92</b><b>91</b><strong>91</strong></div>
             <div className="report-bottom"><span><i /> Sample grade layout</span><b>••••••••••</b></div>
           </article>
           <div className="art-note note-bottom"><span className="note-check" aria-hidden="true">✓</span><span><b>All terms together</b><br />in one student view</span></div>
@@ -59,7 +59,7 @@ export default function HomePage() {
             <Link href="/student" className="student-path student-path-link">
               <span>01 <i /> RETURNING STUDENT</span>
               <h3>View your grades</h3>
-              <p>Enter the full name and LRN on your school record to view posted grades by subject and term.</p>
+              <p>Enter the full name and LRN on your school record to view posted grades by subject and semester.</p>
             </Link>
             <Link href="/student?mode=register" className="student-path student-path-link">
               <span>02 <i /> FIRST-TIME STUDENT</span>

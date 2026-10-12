@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
     const { data: student, error } = await admin
       .from("students")
-      .select("id, full_name, avatar_webp_data_url, pin_digest, section:teacher_sections(grade_level, section_name, academic_year)")
+      .select("id, full_name, avatar_path, avatar_webp_data_url, pin_digest, section:teacher_sections(grade_level, section_name, academic_year)")
       .eq("access_digest", accessDigest)
       .maybeSingle();
     if (error) throw error;
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
     const [gradeResult, assessmentResult, commentResult] = await Promise.all([
       admin.from("subject_grades")
-        .select("id, subject_name, quarter_1, quarter_2, quarter_3, quarter_4, updated_at")
+        .select("id, subject_name, semester_1, semester_2, semester_3, updated_at")
         .eq("student_id", student.id)
         .order("subject_name"),
       admin.from("student_assessments")
@@ -87,13 +87,13 @@ export async function POST(request: Request) {
     if (commentResult.error) throw commentResult.error;
     const grades = gradeResult.data;
     const subjects = (grades ?? []).map((grade) => {
-      const quarters = [grade.quarter_1, grade.quarter_2, grade.quarter_3, grade.quarter_4]
+      const semesters = [grade.semester_1, grade.semester_2, grade.semester_3]
         .map((value) => value === null ? null : Number(value));
-      const scored = quarters.filter((value): value is number => value !== null && Number.isFinite(value));
+      const scored = semesters.filter((value): value is number => value !== null && Number.isFinite(value));
       return {
         id: grade.id,
         subject: grade.subject_name,
-        quarters,
+        semesters,
         finalGrade: scored.length ? Math.round(scored.reduce((sum, value) => sum + value, 0) / scored.length) : null,
         updatedAt: grade.updated_at
       };
@@ -107,10 +107,16 @@ export async function POST(request: Request) {
       assessedOn: assessment.assessed_on,
       updatedAt: assessment.updated_at
     }));
+    let avatar = student.avatar_webp_data_url;
+    if (student.avatar_path) {
+      const { data: signedPhoto, error: signedPhotoError } = await admin.storage.from("profile-photos").createSignedUrl(student.avatar_path, 3600);
+      if (signedPhotoError) throw signedPhotoError;
+      avatar = signedPhoto.signedUrl;
+    }
     return Response.json({
       student: {
         fullName: student.full_name,
-        avatar: student.avatar_webp_data_url,
+        avatar,
         section: student.section
       },
       subjects,

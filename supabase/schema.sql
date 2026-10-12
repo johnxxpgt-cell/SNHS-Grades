@@ -6,6 +6,8 @@ create table if not exists public.teacher_profiles (
   full_name text not null check (char_length(full_name) between 3 and 120),
   email text not null,
   gender text not null default 'Prefer not to say' check (gender in ('Female', 'Male', 'Prefer not to say')),
+  avatar_path text,
+  -- Legacy data URLs are retained only so existing profile photos remain visible during migration.
   avatar_webp_data_url text check (avatar_webp_data_url is null or (char_length(avatar_webp_data_url) <= 520000 and avatar_webp_data_url like 'data:image/webp;base64,%')),
   created_at timestamptz not null default now()
 );
@@ -21,6 +23,8 @@ create table if not exists public.teacher_sections (
   constraint teacher_sections_unique_class unique (grade_level, section_name, academic_year)
 );
 
+alter table public.teacher_profiles add column if not exists avatar_path text;
+
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   full_name text not null check (char_length(full_name) between 3 and 120),
@@ -31,6 +35,8 @@ create table if not exists public.students (
   pin_digest char(64),
   date_of_birth_encrypted text not null,
   gender text not null check (gender in ('Female', 'Male', 'Prefer not to say')),
+  avatar_path text,
+  -- Legacy data URLs are retained only so existing student photos remain visible during migration.
   avatar_webp_data_url text check (avatar_webp_data_url is null or (char_length(avatar_webp_data_url) <= 520000 and avatar_webp_data_url like 'data:image/webp;base64,%')),
   section_id uuid not null references public.teacher_sections (id) on delete restrict,
   registered_at timestamptz not null default now()
@@ -40,14 +46,62 @@ create table if not exists public.subject_grades (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.students (id) on delete cascade,
   subject_name text not null check (char_length(subject_name) between 2 and 80),
-  quarter_1 numeric(5,2) check (quarter_1 is null or quarter_1 between 0 and 100),
-  quarter_2 numeric(5,2) check (quarter_2 is null or quarter_2 between 0 and 100),
-  quarter_3 numeric(5,2) check (quarter_3 is null or quarter_3 between 0 and 100),
-  quarter_4 numeric(5,2) check (quarter_4 is null or quarter_4 between 0 and 100),
+  semester_1 numeric(5,2) constraint subject_grades_semester_1_range check (semester_1 is null or semester_1 between 0 and 100),
+  semester_2 numeric(5,2) constraint subject_grades_semester_2_range check (semester_2 is null or semester_2 between 0 and 100),
+  semester_3 numeric(5,2) constraint subject_grades_semester_3_range check (semester_3 is null or semester_3 between 0 and 100),
   updated_by uuid not null references auth.users (id),
   updated_at timestamptz not null default now(),
   constraint subject_grades_unique_student_subject unique (student_id, subject_name)
 );
+
+alter table public.students add column if not exists avatar_path text;
+
+alter table public.subject_grades add column if not exists semester_1 numeric(5,2);
+alter table public.subject_grades add column if not exists semester_2 numeric(5,2);
+alter table public.subject_grades add column if not exists semester_3 numeric(5,2);
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'subject_grades' and column_name = 'quarter_1'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'subject_grades' and column_name = 'quarter_2'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'subject_grades' and column_name = 'quarter_3'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'subject_grades' and column_name = 'quarter_4'
+  ) then
+    execute $migration$
+      update public.subject_grades
+      set semester_1 = coalesce(semester_1, quarter_1),
+          semester_2 = coalesce(semester_2, quarter_2),
+          semester_3 = coalesce(semester_3,
+            case
+              when quarter_3 is not null and quarter_4 is not null then round((quarter_3 + quarter_4) / 2, 2)
+              else coalesce(quarter_3, quarter_4)
+            end)
+      where semester_1 is null or semester_2 is null or semester_3 is null
+    $migration$;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_1_range') then
+    alter table public.subject_grades add constraint subject_grades_semester_1_range check (semester_1 is null or semester_1 between 0 and 100);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_2_range') then
+    alter table public.subject_grades add constraint subject_grades_semester_2_range check (semester_2 is null or semester_2 between 0 and 100);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_3_range') then
+    alter table public.subject_grades add constraint subject_grades_semester_3_range check (semester_3 is null or semester_3 between 0 and 100);
+  end if;
+end;
+$$;
 
 alter table public.students add column if not exists pin_digest char(64);
 
@@ -75,19 +129,13 @@ create index if not exists students_section_idx on public.students (section_id, 
 create index if not exists subject_grades_student_idx on public.subject_grades (student_id, subject_name);
 create index if not exists student_assessments_student_date_idx on public.student_assessments (student_id, assessed_on desc);
 
--- All self-service Auth sign-ups are teacher accounts. Their first class is created inactive;
--- after email verification and sign-in, the teacher can activate it from the portal.
+-- All self-service Auth sign-ups are teacher accounts. Teachers add sections from their own portal.
 create or replace function public.handle_new_teacher()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  grade_text text;
-  grade_number smallint;
-  section_text text;
-  year_text text;
 begin
   insert into public.teacher_profiles (id, full_name, email, gender)
   values (
@@ -97,15 +145,6 @@ begin
     case when new.raw_user_meta_data ->> 'gender' in ('Female', 'Male') then new.raw_user_meta_data ->> 'gender' else 'Prefer not to say' end
   );
 
-  grade_text := new.raw_user_meta_data ->> 'grade_level';
-  section_text := btrim(coalesce(new.raw_user_meta_data ->> 'section_name', ''));
-  year_text := btrim(coalesce(new.raw_user_meta_data ->> 'academic_year', ''));
-  if grade_text ~ '^(7|8|9|10|11|12)$' and char_length(section_text) between 1 and 40
-     and char_length(year_text) between 7 and 12 then
-    grade_number := grade_text::smallint;
-    insert into public.teacher_sections (teacher_id, grade_level, section_name, academic_year, is_active)
-    values (new.id, grade_number, section_text, year_text, false);
-  end if;
   return new;
 end;
 $$;
@@ -326,6 +365,51 @@ $$;
 revoke all on function public.consume_request_limit(text, text, integer, integer) from public, anon, authenticated;
 grant execute on function public.consume_request_limit(text, text, integer, integer) to service_role;
 
+-- Profile photos are stored as private WebP objects. The database keeps only their storage paths.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('profile-photos', 'profile-photos', false, 2097152, array['image/webp'])
+on conflict (id) do update set public = false, file_size_limit = 2097152, allowed_mime_types = array['image/webp'];
+
+drop policy if exists "Teachers read their own and roster photos" on storage.objects;
+create policy "Teachers read their own and roster photos" on storage.objects
+  for select to authenticated using (
+    bucket_id = 'profile-photos' and (
+      ((storage.foldername(name))[1] = 'teachers' and (storage.foldername(name))[2] = (select auth.uid())::text)
+      or (
+        (storage.foldername(name))[1] = 'students' and exists (
+          select 1 from public.students st
+          join public.teacher_sections sec on sec.id = st.section_id
+          where st.id::text = (storage.foldername(name))[2] and sec.teacher_id = (select auth.uid())
+        )
+      )
+    )
+  );
+drop policy if exists "Teachers upload their own photos" on storage.objects;
+create policy "Teachers upload their own photos" on storage.objects
+  for insert to authenticated with check (
+    bucket_id = 'profile-photos'
+    and (storage.foldername(name))[1] = 'teachers'
+    and (storage.foldername(name))[2] = (select auth.uid())::text
+  );
+drop policy if exists "Teachers update their own photos" on storage.objects;
+create policy "Teachers update their own photos" on storage.objects
+  for update to authenticated using (
+    bucket_id = 'profile-photos'
+    and (storage.foldername(name))[1] = 'teachers'
+    and (storage.foldername(name))[2] = (select auth.uid())::text
+  ) with check (
+    bucket_id = 'profile-photos'
+    and (storage.foldername(name))[1] = 'teachers'
+    and (storage.foldername(name))[2] = (select auth.uid())::text
+  );
+drop policy if exists "Teachers delete their own photos" on storage.objects;
+create policy "Teachers delete their own photos" on storage.objects
+  for delete to authenticated using (
+    bucket_id = 'profile-photos'
+    and (storage.foldername(name))[1] = 'teachers'
+    and (storage.foldername(name))[2] = (select auth.uid())::text
+  );
+
 -- RLS policies remain the data-access boundary for teacher sessions.
 revoke usage on schema public from public, anon;
 grant usage on schema public to authenticated, service_role;
@@ -333,7 +417,7 @@ revoke all on public.teacher_profiles, public.teacher_sections, public.students,
   from public, anon, authenticated, service_role;
 grant select, update on public.teacher_profiles to authenticated;
 grant select, insert, update, delete on public.teacher_sections to authenticated;
-grant select (id, full_name, gender, avatar_webp_data_url, section_id, registered_at) on public.students to authenticated;
+grant select (id, full_name, gender, avatar_path, avatar_webp_data_url, section_id, registered_at) on public.students to authenticated;
 grant select, insert, update, delete on public.subject_grades to authenticated;
 grant select, insert, update, delete on public.student_assessments to authenticated;
 grant select, insert, update, delete on public.student_teacher_comments to authenticated;
