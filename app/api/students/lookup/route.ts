@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, createStudentFeedbackTicket, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
+import { allowRequest, createStudentFeedbackTicket, createStudentSessionTicket, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -199,6 +199,8 @@ export async function POST(request: Request) {
     const ticket = createStudentFeedbackTicket(student.id);
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
     response.headers.append("Set-Cookie", `snhs_feedback_ticket=${ticket}; Path=/api/students/feedback; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
+    const studentSession = createStudentSessionTicket(student.id);
+    response.headers.append("Set-Cookie", `snhs_student_session=${studentSession}; Path=/api/students; HttpOnly; SameSite=Strict; Max-Age=${60 * 60 * 24 * 30}${secure}`);
     return response;
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("The grade lookup could not be read.");

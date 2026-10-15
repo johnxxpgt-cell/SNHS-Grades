@@ -68,3 +68,9 @@ The current UI and active API/database keys use **Term 1**, **Term 2**, and **Te
 For an existing installation, first back up the database and apply any pending original scorebook and subject/feedback migrations in dependency order. Then apply `supabase/migrations/20261015_terms_mobile_ux.sql` exactly once. It renames old grade columns to term keys, converts scorebook period 4 into Term 3 without deleting assessment scores, and safely renames colliding assessment labels before adding the three-term constraint. Because former periods 3 and 4 are consolidated into Term 3, review the Term 3 assessment list after migration. For a fresh installation, use the current `supabase/schema.sql` instead of replaying upgrade migrations on top of it.
 
 The public homepage has clear **Register as a student** and **Teacher sign in** entry points. On a phone, student registration/grade lookup appears as two stacked choices, the class scorebook switches to touch-friendly student cards, and grade reports show one subject/assessment card at a time rather than forcing wide horizontal scrolling.
+
+## Private student dashboard update
+
+After a successful student grade lookup with name, LRN, and PIN, the app redirects to `/student/dashboard`. The dashboard uses an HttpOnly signed session cookie so the student can refresh or reopen their report without putting their LRN, PIN, or student ID into a URL. Use **Log out** to clear the session. Grade tables use expandable sections and switch to labeled cards on mobile.
+
+See `STUDENT_DASHBOARD_SESSION_UPDATE.md` for route behavior, security notes, and deployment checks.

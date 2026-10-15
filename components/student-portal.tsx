@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PortalHeader } from "@/components/brand";
 import { toWebpBlob } from "@/lib/student-images";
@@ -24,6 +25,7 @@ type LookupResult = {
 };
 
 export function StudentPortal() {
+  const router = useRouter();
   const [mode, setMode] = useState<"lookup" | "register">("lookup");
   const [sections, setSections] = useState<SchoolSection[]>([]);
   const [sectionLoading, setSectionLoading] = useState(false);
@@ -69,8 +71,17 @@ export function StudentPortal() {
   useEffect(() => { void loadSections(); }, [loadSections]);
   useEffect(() => () => { if (avatar) URL.revokeObjectURL(avatar); }, [avatar]);
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("mode") === "register") setMode("register");
-  }, []);
+    const requestedMode = new URLSearchParams(window.location.search).get("mode");
+    let active = true;
+    fetch("/api/students/session?check=1", { cache: "no-store", credentials: "same-origin" })
+      .then((response) => {
+        if (!active) return;
+        if (response.ok) router.replace("/student/dashboard");
+        else if (requestedMode === "register") setMode("register");
+      })
+      .catch(() => { if (active && requestedMode === "register") setMode("register"); });
+    return () => { active = false; };
+  }, [router]);
 
   function switchMode(next: "lookup" | "register") {
     setMode(next);
@@ -94,9 +105,8 @@ export function StudentPortal() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "We couldn’t retrieve those grades.");
-      setResult(payload as LookupResult);
       setPin("");
-      setFeedbackGuardianName(""); setFeedbackSubject(""); setFeedbackMessage(""); setFeedbackConsent(false); setFeedbackError(""); setFeedbackNotice("");
+      router.replace("/student/dashboard");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "We couldn’t retrieve those grades.");
     } finally {

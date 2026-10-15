@@ -57,6 +57,32 @@ export function createStudentFeedbackTicket(studentId: string, lifetimeSeconds =
   return `${payload}.${signature}`;
 }
 
+/** Persistent private student session issued only after a successful LRN/PIN lookup. */
+export function createStudentSessionTicket(studentId: string, lifetimeSeconds = 60 * 60 * 24 * 30) {
+  const expiresAt = Math.floor(Date.now() / 1000) + lifetimeSeconds;
+  const payload = `${studentId}.${expiresAt}`;
+  const signature = createHmac("sha256", secret()).update(`student-session\0${payload}`).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+/** Validates the student session cookie; never accepts student IDs from the URL. */
+export function verifyStudentSessionTicket(ticket: string) {
+  if (ticket.length > 256) return null;
+  const parts = ticket.split(".");
+  if (parts.length !== 3) return null;
+  const [studentId, expiryText, signature] = parts;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studentId)) return null;
+  if (!/^\d{10}$/.test(expiryText) || !/^[A-Za-z0-9_-]{40,50}$/.test(signature)) return null;
+  const expiresAt = Number(expiryText);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 60 * 60 * 24 * 30 + 1) return null;
+  const payload = `${studentId}.${expiryText}`;
+  const expected = createHmac("sha256", secret()).update(`student-session\0${payload}`).digest();
+  const supplied = Buffer.from(signature, "base64url");
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+  return { studentId, expiresAt };
+}
+
 /** Validates a grade-lookup ticket without retaining the student's LRN or PIN in the browser. */
 export function verifyStudentFeedbackTicket(ticket: string) {
   if (ticket.length > 256) return null;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, encryptSensitiveField, jsonError, verifyStudentFeedbackTicket } from "@/lib/server/security";
+import { allowRequest, encryptSensitiveField, jsonError, verifyStudentFeedbackTicket, verifyStudentSessionTicket } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -62,14 +62,16 @@ export async function POST(request: Request) {
     if (message.length < 10) return jsonError("Write at least 10 characters so the teacher understands your feedback.", 400);
 
     stage = "verify_grade_lookup_ticket";
-    const ticket = verifyStudentFeedbackTicket(readCookie(request, "snhs_feedback_ticket"));
-    if (!ticket) return jsonError("Your grade-view verification has expired. Look up the grade report again before sending feedback.", 401);
+    const feedbackTicket = verifyStudentFeedbackTicket(readCookie(request, "snhs_feedback_ticket"));
+    const studentSession = verifyStudentSessionTicket(readCookie(request, "snhs_student_session"));
+    const studentId = feedbackTicket?.studentId ?? studentSession?.studentId;
+    if (!studentId) return jsonError("Your student session has ended. Sign in again before sending feedback.", 401);
     stage = "global_rate_limit";
     if (!(await allowRequest(request, "student-parent-feedback", 4, 3600))) {
       return jsonError("Too many feedback messages have been sent. Please try again later.", 429);
     }
     stage = "student_rate_limit";
-    if (!(await allowRequest(request, "student-parent-feedback-student", 3, 3600, ticket.studentId))) {
+    if (!(await allowRequest(request, "student-parent-feedback-student", 3, 3600, studentId))) {
       return jsonError("This student record has reached its hourly feedback limit. Please try again later.", 429);
     }
 
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
     const { data: student, error: studentError } = await admin
       .from("students")
       .select("id, section_id, section:teacher_sections(id, teacher_id)")
-      .eq("id", ticket.studentId)
+      .eq("id", studentId)
       .maybeSingle();
     if (studentError) throw studentError;
     if (!student) return jsonError("The verified student record could not be found. Look up the grade report again.", 401);
