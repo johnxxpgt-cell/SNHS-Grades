@@ -1,0 +1,358 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type ScoreCategory = "Written Works" | "Performance Tasks" | "Summative Test/Exam";
+type GradebookAssessment = {
+  id: string;
+  section_id: string;
+  subject_name: string;
+  grading_period: number;
+  category: ScoreCategory;
+  assessment_name: string;
+  max_score: number | string;
+  assessed_on: string;
+  created_by: string;
+  created_at: string;
+};
+type GradebookScore = {
+  assessment_id: string;
+  student_id: string;
+  score: number | string | null;
+};
+type ClassStudent = { id: string; full_name: string };
+type WeightProfile = "mathScience" | "languageSocial" | "performanceHeavy";
+type Weights = Record<ScoreCategory, number>;
+
+const CATEGORY_ORDER: ScoreCategory[] = ["Written Works", "Performance Tasks", "Summative Test/Exam"];
+const PROFILES: Record<WeightProfile, { label: string; weights: Weights }> = {
+  mathScience: { label: "Mathematics / Science — 40 / 40 / 20", weights: { "Written Works": 40, "Performance Tasks": 40, "Summative Test/Exam": 20 } },
+  languageSocial: { label: "Languages / AP / Values — 30 / 50 / 20", weights: { "Written Works": 30, "Performance Tasks": 50, "Summative Test/Exam": 20 } },
+  performanceHeavy: { label: "MAPEH / TLE — 20 / 60 / 20", weights: { "Written Works": 20, "Performance Tasks": 60, "Summative Test/Exam": 20 } }
+};
+
+function todayLocal() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function recommendedProfile(subject: string): WeightProfile {
+  const normalized = subject.trim().toLowerCase();
+  if (/mapeh|tle|technology|livelihood|arts|physical education|pe\b|music|health/.test(normalized)) return "performanceHeavy";
+  if (/math|science/.test(normalized)) return "mathScience";
+  return "languageSocial";
+}
+
+function cellKey(assessmentId: string, studentId: string) {
+  return `${assessmentId}:${studentId}`;
+}
+
+function calculateWeightedScore(
+  studentId: string,
+  assessments: GradebookAssessment[],
+  scoreMap: Record<string, string>,
+  weights: Weights
+): number | null {
+  if (!assessments.length) return null;
+  let weighted = 0;
+  for (const category of CATEGORY_ORDER) {
+    const grouped = assessments.filter((assessment) => assessment.category === category);
+    if (!grouped.length) return null;
+    let earned = 0;
+    let possible = 0;
+    for (const assessment of grouped) {
+      const raw = scoreMap[cellKey(assessment.id, studentId)];
+      if (raw === undefined || raw.trim() === "") return null;
+      const score = Number(raw);
+      const max = Number(assessment.max_score);
+      if (!Number.isFinite(score) || score < 0 || score > max || max <= 0) return null;
+      earned += score;
+      possible += max;
+    }
+    if (possible <= 0) return null;
+    weighted += (earned / possible) * 100 * (weights[category] / 100);
+  }
+  return Math.round(weighted * 100) / 100;
+}
+
+export function ClassScorebook({
+  sectionId,
+  sectionLabel,
+  academicYear,
+  students,
+  userId
+}: {
+  sectionId: string;
+  sectionLabel: string;
+  academicYear: string;
+  students: ClassStudent[];
+  userId: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  const [subjectInput, setSubjectInput] = useState("Science");
+  const [activeSubject, setActiveSubject] = useState("Science");
+  const [periodInput, setPeriodInput] = useState("1");
+  const [activePeriod, setActivePeriod] = useState(1);
+  const [weightProfile, setWeightProfile] = useState<WeightProfile>("mathScience");
+  const [assessments, setAssessments] = useState<GradebookAssessment[]>([]);
+  const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
+  const [changedCells, setChangedCells] = useState<Record<string, true>>({});
+  const [category, setCategory] = useState<ScoreCategory>("Written Works");
+  const [assessmentName, setAssessmentName] = useState("");
+  const [maxScore, setMaxScore] = useState("20");
+  const [assessmentDate, setAssessmentDate] = useState(todayLocal);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+
+  const studentIds = useMemo(() => students.map((student) => student.id), [students]);
+  const studentIdsKey = useMemo(() => studentIds.join(","), [studentIds]);
+  const weights = PROFILES[weightProfile].weights;
+  const sortedAssessments = useMemo(() => [...assessments].sort((left, right) => {
+    const categoryDelta = CATEGORY_ORDER.indexOf(left.category) - CATEGORY_ORDER.indexOf(right.category);
+    return categoryDelta || left.assessed_on.localeCompare(right.assessed_on) || left.created_at.localeCompare(right.created_at);
+  }), [assessments]);
+  const visibleStudents = useMemo(() => students.filter((student) => student.full_name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [students, search]);
+
+  const loadScorebook = useCallback(async () => {
+    if (!supabase || !sectionId || !activeSubject.trim()) {
+      setAssessments([]);
+      setScoreInputs({});
+      setChangedCells({});
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { data: assessmentRows, error: assessmentError } = await supabase
+      .from("gradebook_assessments")
+      .select("id, section_id, subject_name, grading_period, category, assessment_name, max_score, assessed_on, created_by, created_at")
+      .eq("section_id", sectionId)
+      .eq("subject_name", activeSubject.trim())
+      .eq("grading_period", activePeriod)
+      .order("created_at", { ascending: true });
+
+    if (assessmentError) {
+      console.error("[class-scorebook] Assessment query failed:", assessmentError);
+      setError("The class scorebook could not load. Apply the class scorebook Supabase migration, then reload this page.");
+      setAssessments([]);
+      setScoreInputs({});
+      setLoading(false);
+      return;
+    }
+
+    const listed = (assessmentRows ?? []) as GradebookAssessment[];
+    const nextScores: Record<string, string> = {};
+    if (listed.length && studentIds.length) {
+      const { data: scoreRows, error: scoreError } = await supabase
+        .from("gradebook_scores")
+        .select("assessment_id, student_id, score")
+        .in("assessment_id", listed.map((assessment) => assessment.id))
+        .in("student_id", studentIds);
+      if (scoreError) {
+        console.error("[class-scorebook] Score query failed:", scoreError);
+        setError("Assessment columns loaded, but saved scores could not be read. Check the Supabase migration and teacher permissions.");
+        setLoading(false);
+        return;
+      }
+      for (const row of (scoreRows ?? []) as GradebookScore[]) {
+        nextScores[cellKey(row.assessment_id, row.student_id)] = row.score === null ? "" : String(row.score);
+      }
+    }
+    // Keep every roster cell present so empty scores stay visibly distinct from a score of zero.
+    for (const assessment of listed) {
+      for (const studentId of studentIds) {
+        const key = cellKey(assessment.id, studentId);
+        if (!(key in nextScores)) nextScores[key] = "";
+      }
+    }
+    setAssessments(listed);
+    setScoreInputs(nextScores);
+    setChangedCells({});
+    setLoading(false);
+  }, [supabase, sectionId, activeSubject, activePeriod, studentIdsKey]);
+
+  useEffect(() => { void loadScorebook(); }, [loadScorebook]);
+  useEffect(() => { setWeightProfile(recommendedProfile(activeSubject)); }, [activeSubject]);
+
+  async function handleAddAssessment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) { setError("Supabase is not configured."); return; }
+    setError(""); setNotice("");
+    const cleanName = assessmentName.trim().replace(/\s+/g, " ");
+    const max = Number(maxScore);
+    if (cleanName.length < 2 || cleanName.length > 100) { setError("Enter an assessment name between 2 and 100 characters."); return; }
+    if (!Number.isFinite(max) || max <= 0 || max > 100000) { setError("Maximum score must be greater than 0 and no more than 100,000."); return; }
+    if (!activeSubject.trim() || activeSubject.trim().length < 2 || activeSubject.trim().length > 80) { setError("Enter a subject name between 2 and 80 characters, then load it."); return; }
+    if (subjectInput.trim().replace(/\s+/g, " ") !== activeSubject || Number(periodInput) !== activePeriod) { setError("Click ‘Load subject & quarter’ before adding an assessment so it is saved to the selected subject and quarter."); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate) || Number.isNaN(new Date(`${assessmentDate}T00:00:00`).getTime())) { setError("Choose a valid assessment date."); return; }
+
+    setSaving(true);
+    const { error: insertError } = await supabase.from("gradebook_assessments").insert({
+      section_id: sectionId,
+      subject_name: activeSubject.trim(),
+      grading_period: activePeriod,
+      category,
+      assessment_name: cleanName,
+      max_score: max,
+      assessed_on: assessmentDate,
+      created_by: userId
+    });
+    if (insertError) {
+      console.error("[class-scorebook] Assessment insert failed:", insertError);
+      setError(insertError.code === "23505" ? "An assessment with this name already exists in this subject and quarter." : "The assessment could not be saved. Check the class scorebook migration and try again.");
+      setSaving(false);
+      return;
+    }
+    setAssessmentName("");
+    setNotice("Assessment column added. Enter scores for the students, then select Save scores.");
+    await loadScorebook();
+    setSaving(false);
+  }
+
+  function handleScoreChange(assessment: GradebookAssessment, studentId: string, value: string) {
+    const key = cellKey(assessment.id, studentId);
+    setScoreInputs((previous) => ({ ...previous, [key]: value }));
+    setChangedCells((previous) => ({ ...previous, [key]: true }));
+    setError("");
+    setNotice("");
+  }
+
+  async function handleSaveScores() {
+    if (!supabase || !Object.keys(changedCells).length) return;
+    setError(""); setNotice("");
+    const assessmentById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+    const payload: { assessment_id: string; student_id: string; score: number | null; updated_by: string; updated_at: string }[] = [];
+    for (const key of Object.keys(changedCells)) {
+      const [assessmentId, studentId] = key.split(":");
+      const assessment = assessmentById.get(assessmentId);
+      if (!assessment || !studentIds.includes(studentId)) continue;
+      const raw = scoreInputs[key] ?? "";
+      if (raw.trim() === "") {
+        payload.push({ assessment_id: assessmentId, student_id: studentId, score: null, updated_by: userId, updated_at: new Date().toISOString() });
+        continue;
+      }
+      const score = Number(raw);
+      const maximum = Number(assessment.max_score);
+      if (!Number.isFinite(score) || score < 0 || score > maximum) {
+        const studentName = students.find((student) => student.id === studentId)?.full_name ?? "the selected student";
+        setError(`Invalid score for ${studentName}, ${assessment.assessment_name}. Enter a score from 0 to ${maximum}, or leave it blank.`);
+        return;
+      }
+      payload.push({ assessment_id: assessmentId, student_id: studentId, score, updated_by: userId, updated_at: new Date().toISOString() });
+    }
+    if (!payload.length) return;
+    setSaving(true);
+    const { error: saveError } = await supabase.from("gradebook_scores").upsert(payload, { onConflict: "assessment_id,student_id" });
+    if (saveError) {
+      console.error("[class-scorebook] Score save failed:", saveError);
+      setError("Scores could not be saved. Verify the migration and make sure each student belongs to this class section.");
+      setSaving(false);
+      return;
+    }
+    setNotice(`${payload.length} score cell${payload.length === 1 ? "" : "s"} saved successfully.`);
+    await loadScorebook();
+    setSaving(false);
+  }
+
+  async function handleDeleteAssessment(assessment: GradebookAssessment) {
+    if (!supabase || !window.confirm(`Delete “${assessment.assessment_name}” and its saved student scores? This cannot be undone.`)) return;
+    setError(""); setNotice(""); setSaving(true);
+    const { error: deleteError } = await supabase.from("gradebook_assessments").delete().eq("id", assessment.id).eq("section_id", sectionId);
+    if (deleteError) {
+      console.error("[class-scorebook] Assessment delete failed:", deleteError);
+      setError("This assessment could not be deleted. Check your teacher permissions.");
+    } else {
+      setNotice("Assessment and its saved scores were deleted.");
+      await loadScorebook();
+    }
+    setSaving(false);
+  }
+
+  const computedGrades = useMemo(() => students.map((student) => ({
+    studentId: student.id,
+    value: calculateWeightedScore(student.id, sortedAssessments, scoreInputs, weights)
+  })), [students, sortedAssessments, scoreInputs, weights]);
+  const classAverage = useMemo(() => {
+    const reported = computedGrades.map((grade) => grade.value).filter((value): value is number => value !== null);
+    return reported.length ? Math.round((reported.reduce((sum, value) => sum + value, 0) / reported.length) * 100) / 100 : null;
+  }, [computedGrades]);
+  const enteredCells = useMemo(() => sortedAssessments.reduce((count, assessment) => count + students.filter((student) => (scoreInputs[cellKey(assessment.id, student.id)] ?? "").trim() !== "").length, 0), [sortedAssessments, students, scoreInputs]);
+  const expectedCells = sortedAssessments.length * students.length;
+  const missingCells = Math.max(0, expectedCells - enteredCells);
+  const hasAnyEditedCell = Object.keys(changedCells).length > 0;
+  const categoriesPresent = new Set(sortedAssessments.map((assessment) => assessment.category));
+
+  return (
+    <section className="class-scorebook-panel" aria-labelledby="class-scorebook-heading">
+      <div className="scorebook-title-row">
+        <div>
+          <span className="form-overline">CLASS SCOREBOOK</span>
+          <h2 id="class-scorebook-heading">Assessment entry</h2>
+          <p>{sectionLabel} · {academicYear}. Enter one score per student for each assessment, like a digital E-Class Record.</p>
+        </div>
+        <div className="scorebook-class-average"><span>COMPLETED INITIAL GRADES</span><strong>{classAverage === null ? "—" : classAverage.toFixed(2)}</strong><small>{computedGrades.filter((grade) => grade.value !== null).length} of {students.length} students complete</small></div>
+      </div>
+
+      <div className="scorebook-controls">
+        <label className="field"><span>Subject</span><input value={subjectInput} onChange={(event) => setSubjectInput(event.target.value)} maxLength={80} placeholder="e.g. Science" /></label>
+        <label className="field"><span>Grading period</span><select value={periodInput} onChange={(event) => setPeriodInput(event.target.value)}>{[1, 2, 3, 4].map((period) => <option value={period} key={period}>Quarter {period}</option>)}</select></label>
+        <button className="button button-outline" type="button" onClick={() => { const clean = subjectInput.trim().replace(/\s+/g, " "); if (clean.length < 2) { setError("Enter a valid subject name."); return; } setActiveSubject(clean); setActivePeriod(Number(periodInput)); setError(""); setNotice(""); }} disabled={saving}>Load subject & quarter</button>
+      </div>
+
+      <div className="scorebook-weight-row">
+        <label className="field"><span>Suggested grading-weight profile</span><select value={weightProfile} onChange={(event) => setWeightProfile(event.target.value as WeightProfile)}><option value="mathScience">{PROFILES.mathScience.label}</option><option value="languageSocial">{PROFILES.languageSocial.label}</option><option value="performanceHeavy">{PROFILES.performanceHeavy.label}</option></select></label>
+        <p><strong>Current:</strong> WW {weights["Written Works"]}% · PT {weights["Performance Tasks"]}% · Summative {weights["Summative Test/Exam"]}%. Confirm these weights against the school-approved grading policy before using for official grades.</p>
+      </div>
+
+      <form className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
+        <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject} · Quarter {activePeriod}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
+        <div className="scorebook-add-grid">
+          <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} minLength={2} maxLength={100} required placeholder="e.g. Written Work 1" /></label>
+          <label className="field"><span>Highest possible score</span><input type="number" min="0.01" max="100000" step="0.01" value={maxScore} onChange={(event) => setMaxScore(event.target.value)} required /></label>
+          <label className="field"><span>Date</span><input type="date" value={assessmentDate} onChange={(event) => setAssessmentDate(event.target.value)} required /></label>
+          <button type="submit" className="button button-primary" disabled={saving || !activeSubject.trim()}>{saving ? "Saving…" : "+ Add assessment"}</button>
+        </div>
+      </form>
+
+      {error && <p className="form-alert error-alert" role="alert">{error}</p>}
+      {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
+
+      <div className="scorebook-summary-row">
+        <span>{students.length} students</span>
+        <span>{enteredCells} of {expectedCells} score cells entered</span>
+        <span className={missingCells ? "scorebook-warning" : "scorebook-complete"}>{missingCells ? `${missingCells} missing` : "All entered"}</span>
+        {hasAnyEditedCell && <button type="button" className="button button-primary scorebook-save" onClick={() => void handleSaveScores()} disabled={saving}>{saving ? "Saving scores…" : `Save ${Object.keys(changedCells).length} changed cells`}</button>}
+      </div>
+
+      <div className="scorebook-table-wrap">
+        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>No assessments for {activeSubject}, Quarter {activePeriod} yet.</strong><p>Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook.</p></div> : (
+          <table className="scorebook-table">
+            <thead><tr><th className="scorebook-student-col">Student</th>{sortedAssessments.map((assessment) => <th key={assessment.id}><div className="scorebook-assessment-heading"><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Max: {Number(assessment.max_score)}</small><button type="button" onClick={() => void handleDeleteAssessment(assessment)} aria-label={`Delete ${assessment.assessment_name}`} disabled={saving}>Delete column</button></div></th>)}<th className="scorebook-grade-col">Initial<br />weighted score</th></tr></thead>
+            <tbody>
+              {visibleStudents.map((student) => {
+                const grade = computedGrades.find((row) => row.studentId === student.id)?.value ?? null;
+                return <tr key={student.id}>
+                  <th scope="row" className="scorebook-student-col"><span>{student.full_name}</span><small>{grade === null ? "Incomplete" : grade >= 75 ? "At/above 75" : "Below 75"}</small></th>
+                  {sortedAssessments.map((assessment) => {
+                    const key = cellKey(assessment.id, student.id);
+                    const value = scoreInputs[key] ?? "";
+                    return <td key={assessment.id}><input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} /></td>;
+                  })}
+                  <td className="scorebook-grade-cell">{grade === null ? <span className="scorebook-incomplete">Incomplete</span> : <strong className={grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade.toFixed(2)}</strong>}</td>
+                </tr>;
+              })}
+              {!visibleStudents.length && <tr><td colSpan={sortedAssessments.length + 2} className="scorebook-empty">No students match the current search.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="scorebook-footer"><p>Blank cells mean “not entered”; a score of 0 is a real score. Initial weighted scores appear only after all three assessment categories exist and all of that student’s scores in the selected quarter are entered.</p><p>These are weighted initial scores, not official transmuted quarterly grades. Configure the school-approved transmutation table and verify grading weights before using them for official reporting.</p></div>
+      <div className="scorebook-tools"><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter students in scorebook" aria-label="Filter students in scorebook" /></label><span>Categories present: {CATEGORY_ORDER.map((item) => `${item} ${categoriesPresent.has(item) ? "✓" : "—"}`).join(" · ")}</span></div>
+    </section>
+  );
+}

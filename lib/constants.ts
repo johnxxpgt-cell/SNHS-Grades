@@ -1,1 +1,3 @@
 export const MAX_AVATAR_FILE_SIZE = 2 * 1024 * 1024;
+
+export const PRIVACY_NOTICE_VERSION = "2026-10-15";

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PortalHeader } from "@/components/brand";
 import { toWebpBlob } from "@/lib/student-images";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 type SchoolSection = { id: string; grade_level: number; section_name: string; academic_year: string };
 type Subject = { id: string; subject: string; semesters: (number | null)[]; finalGrade: number | null; updatedAt: string };
@@ -27,6 +28,8 @@ export function StudentPortal() {
   const [fullName, setFullName] = useState("");
   const [lrn, setLrn] = useState("");
   const [pin, setPin] = useState("");
+  const [lookupPrivacyConsent, setLookupPrivacyConsent] = useState(false);
+  const [registrationPrivacyConsent, setRegistrationPrivacyConsent] = useState(false);
   const [birthday, setBirthday] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [gender, setGender] = useState("Prefer not to say");
@@ -74,7 +77,11 @@ export function StudentPortal() {
     try {
       const response = await fetch("/api/students/lookup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, lrn, pin })
+        body: JSON.stringify({
+          fullName, lrn, pin,
+          privacyConsent: lookupPrivacyConsent,
+          privacyNoticeVersion: PRIVACY_NOTICE_VERSION
+        })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "We couldn’t retrieve those grades.");
@@ -98,12 +105,14 @@ export function StudentPortal() {
       form.set("birthday", birthday);
       form.set("sectionId", sectionId);
       form.set("gender", gender);
+      form.set("privacyConsent", registrationPrivacyConsent ? "accepted" : "");
+      form.set("privacyNoticeVersion", PRIVACY_NOTICE_VERSION);
       if (avatarFile) form.set("photo", avatarFile, avatarFile.name);
       const response = await fetch("/api/students/register", { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Registration could not be completed.");
       setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}.`);
-      setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName("");
+      setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName(""); setRegistrationPrivacyConsent(false);
       setMode("lookup");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Registration could not be completed.");
@@ -256,7 +265,7 @@ export function StudentPortal() {
   return (
     <main className="portal-page student-portal-page">
       <div className="portal-shell">
-        <PortalHeader />
+        <PortalHeader breadcrumbs={[{ label: "Home", href: "/" }, { label: "Student portal"}]} />
         <div className="portal-layout">
           <section className="portal-main-column">
             <div className="portal-intro">
@@ -278,7 +287,8 @@ export function StudentPortal() {
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="e.g. Juan Dela Cruz" /></label>
                     <label className="field"><span>Learner Reference Number <small>LRN</small></span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="Enter your LRN" /></label>
                     <label className="field"><span>4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Enter your PIN" /><small className="field-help">If your record existed before PINs were added, your first successful lookup saves the PIN you enter.</small></label>
-                    <button className="button button-primary form-submit" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Looking up grades…</> : <>View my grades <span aria-hidden="true">→</span></>}</button>
+                    <label className="consent-row"><input type="checkbox" checked={lookupPrivacyConsent} onChange={(event) => setLookupPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and acknowledge that my details will be processed to verify and display my school record.</span></label>
+                    <button className="button button-primary form-submit" type="submit" disabled={busy || !lookupPrivacyConsent}>{busy ? <><span className="spinner" /> Looking up grades…</> : <>View my grades <span aria-hidden="true">→</span></>}</button>
                   </form>
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
@@ -306,8 +316,9 @@ export function StudentPortal() {
                       <label className="field"><span>Gender <small>Optional</small></span><select value={gender} onChange={(event) => setGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label>
                       <label className="field"><span>Profile photo <small>Optional</small></span><span className="photo-control"><input type="file" accept="image/*" onChange={(event) => void handlePhoto(event.target.files?.[0])} /><span className="photo-faux">{avatar ? "Photo ready · WebP" : "Choose a photo"}</span></span></label>
                     </div>
-                    {avatar && <div className="photo-preview"><img src={avatar} alt="Selected student profile preview" /><span>{avatarName} <small>converted to WebP and stored securely</small></span><button type="button" onClick={() => { setAvatar(null); setAvatarFile(null); setAvatarName(""); }}>Remove</button></div>}
-                    <button className="button button-primary form-submit" type="submit" disabled={busy || sectionLoading || !sections.length}>{busy ? <><span className="spinner" /> Registering…</> : <>Register student <span aria-hidden="true">→</span></>}</button>
+                    {avatar && <div className="photo-preview"><img src={avatar} alt="Selected student profile preview" loading="lazy" decoding="async" /><span>{avatarName} <small>converted to WebP and stored securely</small></span><button type="button" onClick={() => { setAvatar(null); setAvatarFile(null); setAvatarName(""); }}>Remove</button></div>}
+                    <label className="consent-row"><input type="checkbox" checked={registrationPrivacyConsent} onChange={(event) => setRegistrationPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of these details for student registration and school-record access. If registering a minor, I confirm that I am the student or have appropriate parent/guardian authority.</span></label>
+                    <button className="button button-primary form-submit" type="submit" disabled={busy || sectionLoading || !sections.length || !registrationPrivacyConsent}>{busy ? <><span className="spinner" /> Registering…</> : <>Register student <span aria-hidden="true">→</span></>}</button>
                   </form>
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   <div className="privacy-note"><span aria-hidden="true">⌑</span><p><b>Check your details before submitting.</b> LRNs can only be registered once. For corrections, ask your teacher.</p></div>
@@ -321,7 +332,7 @@ export function StudentPortal() {
               <section className="student-result-card">
                 <div className="result-topline"><span className="result-badge"><i /> VERIFIED RECORD</span><button className="result-close" type="button" aria-label="Close grade report" onClick={() => setResult(null)}>×</button></div>
                 <div className="result-student">
-                  {result.student.avatar ? <img className="result-avatar" src={result.student.avatar} alt="" /> : <div className="result-avatar initials-avatar">{result.student.fullName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div>}
+                  {result.student.avatar ? <img className="result-avatar" src={result.student.avatar} alt="" loading="lazy" decoding="async" /> : <div className="result-avatar initials-avatar">{result.student.fullName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div>}
                   <div><h2>{result.student.fullName}</h2><p>Grade {result.student.section.grade_level} · {result.student.section.section_name}</p></div>
                 </div>
                 <div className="result-average"><div><span>OVERALL AVERAGE</span><small>{result.student.section.academic_year}</small></div><strong>{average ?? "—"}<small>{average === null ? "" : "/ 100"}</small></strong></div>

@@ -1,6 +1,14 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Brand } from "@/components/brand";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
+
+export const metadata: Metadata = {
+  title: "Student grade portal",
+  description: "Access posted grades, register for a class section, and keep track of school progress with SNHS Gradebook.",
+  alternates: { canonical: "/" },
+  openGraph: { title: "Student grade portal", description: "Access posted grades and school progress with SNHS Gradebook.", url: "/", images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "SNHS Gradebook — Salvacion National High School" }] }
+};
 
 export default function HomePage() {
   const schoolYear = getCurrentAcademicYear();
@@ -186,6 +194,11 @@ export default function HomePage() {
         <p>
          <span>|</span><a href="https://darrenbardelas.xyz/">Made by Libarrium</a>
         </p>
+        <nav className="footer-links" aria-label="Helpful links">
+          <Link href="/contact">Contact</Link>
+          <Link href="/privacy">Privacy Policy</Link>
+          <Link href="/terms">Terms of Service</Link>
+        </nav>
         <span className="footer-mark">STUDENT GRADE RECORDS</span>
       </footer>
     </main>

@@ -43,7 +43,7 @@ export default function AuthCallbackPage() {
   return (
     <main className="portal-page teacher-portal-page">
       <div className="portal-shell">
-        <PortalHeader />
+        <PortalHeader breadcrumbs={[{ label: "Home", href: "/" }, { label: "Teacher portal", href: "/teacher" }, { label: "Account confirmation"}]} />
         <section className="auth-callback-card" aria-live="polite">
           <div className={failed ? "auth-callback-mark failed" : "auth-callback-mark"}>{failed ? "!" : <span className="spinner" />}</div>
           <span className="section-kicker">TEACHER ACCOUNT</span>

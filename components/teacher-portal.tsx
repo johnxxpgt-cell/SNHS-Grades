@@ -2,9 +2,12 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { PortalHeader } from "@/components/brand";
+import { ClassScorebook } from "@/components/class-scorebook";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toWebpBlob } from "@/lib/student-images";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
+import Link from "next/link";
 
 type TeacherUser = { id: string; email?: string };
 type SchoolSection = { id: string; teacher_id: string; grade_level: number; section_name: string; academic_year: string; is_active: boolean };
@@ -64,6 +67,7 @@ export function TeacherPortal() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [privacyConsent, setPrivacyConsent] = useState(false);
   const [teacherGender, setTeacherGender] = useState("Prefer not to say");
   const [profileName, setProfileName] = useState("");
   const [profileGender, setProfileGender] = useState("Prefer not to say");
@@ -82,6 +86,7 @@ export function TeacherPortal() {
   const [commentDraft, setCommentDraft] = useState("");
   const [search, setSearch] = useState("");
   const [showAddSection, setShowAddSection] = useState(false);
+  const [showClassScorebook, setShowClassScorebook] = useState(false);
   const [newGradeLevel, setNewGradeLevel] = useState("7");
   const [newSectionName, setNewSectionName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,12 +176,18 @@ export function TeacherPortal() {
     if (!supabase) { setError("Add your Supabase URL and publishable key to the environment settings first."); setBusy(false); return; }
     try {
       if (authMode === "register") {
+        if (!privacyConsent) throw new Error("Please read the Privacy Policy and consent before creating an account.");
         if (password !== confirmPassword) throw new Error("Your passwords don’t match.");
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(), password,
           options: {
             emailRedirectTo: teacherConfirmationUrl(),
-            data: { full_name: fullName.trim(), gender: teacherGender }
+            data: {
+              full_name: fullName.trim(),
+              gender: teacherGender,
+              privacy_notice_version: PRIVACY_NOTICE_VERSION,
+              privacy_notice_acknowledged_at: new Date().toISOString()
+            }
           }
         });
         if (signUpError) throw signUpError;
@@ -342,25 +353,25 @@ export function TeacherPortal() {
   return (
     <main className="portal-page teacher-portal-page">
       <div className="portal-shell">
-        <PortalHeader />
+        <PortalHeader breadcrumbs={[{ label: "Home", href: "/" }, { label: "Teacher portal"}]} />
         {!supabase ? (
-          <section className="setup-message"><span className="section-kicker">TEACHER SERVICES</span><h1>Set up your secure<br /><em>teacher workspace.</em></h1><p>Connect the Supabase project to enable teacher registration and class records.</p><div className="setup-code">NEXT_PUBLIC_SUPABASE_URL<br />NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY<br />SUPABASE_SECRET_KEY<br />SUPABASE_LRN_HMAC_SECRET<br />SUPABASE_DATA_ENCRYPTION_KEY</div><a href="/" className="text-link">← Return to home</a></section>
+          <section className="setup-message"><span className="section-kicker">TEACHER SERVICES</span><h1>Set up your secure<br /><em>teacher workspace.</em></h1><p>Connect the Supabase project to enable teacher registration and class records.</p><div className="setup-code">NEXT_PUBLIC_SUPABASE_URL<br />NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY<br />SUPABASE_SECRET_KEY<br />SUPABASE_LRN_HMAC_SECRET<br />SUPABASE_DATA_ENCRYPTION_KEY<br />SUPABASE_CONTACT_ENCRYPTION_KEY</div><a href="/" className="text-link">← Return to home</a></section>
         ) : user ? (
           <section className="teacher-dashboard">
-            <div className="dashboard-heading"><div><span className="section-kicker">TEACHER WORKSPACE</span><h1>Welcome back, <em>{profileName.split(" ")[0]}.</em></h1><p>Your class records, ready when you are.</p></div><div className="dashboard-account"><label className="account-photo-control" title="Upload profile photo">{profileAvatar ? <img src={profileAvatar} alt="Teacher profile" /> : <span className="teacher-avatar">{profileName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<input type="file" accept="image/*" aria-label="Upload teacher profile photo" onChange={(event) => void handleTeacherPhoto(event.target.files?.[0])} /></label><div><b>{profileName}</b><small>{profileGender} · {user.email}</small></div><button className="signout-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></div></div>
+            <div className="dashboard-heading"><div><span className="section-kicker">TEACHER WORKSPACE</span><h1>Welcome back, <em>{profileName.split(" ")[0]}.</em></h1><p>Your class records, ready when you are.</p></div><div className="dashboard-account"><label className="account-photo-control" title="Upload profile photo">{profileAvatar ? <img src={profileAvatar} alt="Teacher profile" loading="lazy" decoding="async" /> : <span className="teacher-avatar">{profileName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<input type="file" accept="image/*" aria-label="Upload teacher profile photo" onChange={(event) => void handleTeacherPhoto(event.target.files?.[0])} /></label><div><b>{profileName}</b><small>{profileGender} · {user.email}</small></div><button className="signout-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></div></div>
             {error && <p className="form-alert error-alert" role="alert">{error}</p>}
             {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
-            <div className="dashboard-toolbar"><div><label htmlFor="teacher-section-select">CLASS SECTION</label><select id="teacher-section-select" value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedStudentId(""); }} disabled={!sections.length}><option value="">{sections.length ? "Choose a section" : "No sections yet"}</option>{sections.map((section) => <option value={section.id} key={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}</select></div><button type="button" className="button button-outline" onClick={() => setShowAddSection((value) => !value)}>{showAddSection ? "Close" : "+ Add a section"}</button></div>
+            <div className="dashboard-toolbar"><div><label htmlFor="teacher-section-select">CLASS SECTION</label><select id="teacher-section-select" value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedStudentId(""); }} disabled={!sections.length}><option value="">{sections.length ? "Choose a section" : "No sections yet"}</option>{sections.map((section) => <option value={section.id} key={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}</select></div><div className="dashboard-toolbar-actions"><button type="button" className="button button-outline" onClick={() => setShowClassScorebook((value) => !value)} disabled={!selectedSectionId}>{showClassScorebook ? "Back to roster" : "Open class scorebook"}</button><button type="button" className="button button-outline" onClick={() => setShowAddSection((value) => !value)}>{showAddSection ? "Close" : "+ Add a section"}</button></div></div>
             {showAddSection && <form className="add-section-panel" onSubmit={handleAddSection}><div><span className="form-overline">NEW CLASS</span><h2>Open another section</h2><p>Students can register as soon as it’s added.</p></div><label className="field"><span>Grade level</span><select value={newGradeLevel} onChange={(event) => setNewGradeLevel(event.target.value)}>{[7, 8, 9, 10, 11, 12].map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="field"><span>Section name</span><input value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} maxLength={40} required placeholder="e.g. Rizal" /></label><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add section"}</button></form>}
             {loadingDashboard ? <div className="dashboard-loading"><span className="spinner" /> Loading your workspace…</div> : sections.length ? (
               <>
                 <div className="dashboard-stats"><div><span>CLASS ROSTER</span><b>{students.length.toString().padStart(2, "0")}<small> students</small></b></div><div><span>SUBJECT RECORDS</span><b>{students.reduce((sum, student) => sum + (student.subject_grades?.length ?? 0), 0).toString().padStart(2, "0")}<small> entered</small></b></div><div><span>CLASS AVERAGE</span><b>{classAverage ?? "—"}<small>{classAverage === null ? " no grades" : " / 100"}</small></b></div><div className="stats-school-year"><span>ACADEMIC YEAR</span><b>{selectedSection?.academic_year ?? academicYear()}</b></div></div>
-                <div className="teacher-workgrid">
+                {showClassScorebook ? (selectedSection ? <ClassScorebook sectionId={selectedSection.id} sectionLabel={`Grade ${selectedSection.grade_level} — ${selectedSection.section_name}`} academicYear={selectedSection.academic_year} students={students.map((student) => ({ id: student.id, full_name: student.full_name }))} userId={user.id} /> : null) : <div className="teacher-workgrid">
                   <section className="roster-panel"><div className="panel-heading"><div><span className="form-overline">GRADE {selectedSection?.grade_level} · {selectedSection?.section_name}</span><h2>Class roster</h2></div><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a student" aria-label="Find a student" /></label></div>
                     <div className="roster-table-wrap"><table className="roster-table"><thead><tr><th>STUDENT</th><th>SUBJECTS</th><th>AVERAGE</th><th>RECORD</th></tr></thead><tbody>
                       {loadingRoster ? <tr><td colSpan={4} className="table-message"><span className="spinner" /> Loading roster…</td></tr> : visibleStudents.map((student) => {
                         const avg = averageFor(student.subject_grades ?? []);
-                        return <tr key={student.id} className={selectedStudentId === student.id ? "selected-row" : ""}><td><div className="roster-person">{student.avatar_url ? <img src={student.avatar_url} alt="" /> : <span className="roster-initials">{student.full_name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<span><b>{student.full_name}</b><small>{student.gender}</small></span></div></td><td>{student.subject_grades?.length ?? 0}</td><td>{avg === null ? <span className="unreported">—</span> : <span className={avg >= 75 ? "grade-pill pass" : "grade-pill"}>{avg}</span>}</td><td><button type="button" className="table-action" onClick={() => { setSelectedStudentId(student.id); setError(""); setNotice(""); }}>{selectedStudentId === student.id ? "Selected" : "Enter grades →"}</button></td></tr>;
+                        return <tr key={student.id} className={selectedStudentId === student.id ? "selected-row" : ""}><td><div className="roster-person">{student.avatar_url ? <img src={student.avatar_url} alt="" loading="lazy" decoding="async" /> : <span className="roster-initials">{student.full_name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<span><b>{student.full_name}</b><small>{student.gender}</small></span></div></td><td>{student.subject_grades?.length ?? 0}</td><td>{avg === null ? <span className="unreported">—</span> : <span className={avg >= 75 ? "grade-pill pass" : "grade-pill"}>{avg}</span>}</td><td><button type="button" className="table-action" onClick={() => { setSelectedStudentId(student.id); setError(""); setNotice(""); }}>{selectedStudentId === student.id ? "Selected" : "Enter grades →"}</button></td></tr>;
                       })}
                       {!loadingRoster && !students.length && <tr><td colSpan={4} className="table-empty"><div className="empty-icon">✳</div><b>No students registered yet</b><p>Share the student portal with your class. Students can select Grade {selectedSection?.grade_level} — {selectedSection?.section_name} when they register.</p></td></tr>}
                       {!loadingRoster && students.length > 0 && !visibleStudents.length && <tr><td colSpan={4} className="table-message">No students match “{search}”.</td></tr>}
@@ -401,7 +412,7 @@ export function TeacherPortal() {
                       </section>
                     </> : <div className="editor-empty"><span className="editor-empty-icon">✎</span><span className="form-overline">GRADE ENTRY</span><h2>Select a student<br />to get started.</h2><p>Choose a student from your roster to add or update their subject grades.</p></div>}
                   </section>
-                </div>
+                </div>}
               </>
             ) : <div className="no-classes-panel"><div className="empty-icon">✳</div><h2>Your teacher account is ready.</h2><p>Add your grade level and section when you are ready to open student registration.</p><button className="button button-primary" type="button" onClick={() => setShowAddSection(true)}>+ Add your first section</button></div>}
           </section>
@@ -416,7 +427,8 @@ export function TeacherPortal() {
                     {authMode === "register" ? <div className="field-row"><label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label><label className="field"><span>Gender <small>Optional</small></span><select value={teacherGender} onChange={(event) => setTeacherGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label></div> : <label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label>}
                     <label className="field"><span>Password {authMode === "register" && <small>At least 12 characters</small>}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={authMode === "register" ? 12 : 1} autoComplete={authMode === "signin" ? "current-password" : "new-password"} placeholder="Enter your password" /></label>
                     {authMode === "register" && <label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={12} autoComplete="new-password" placeholder="Enter your password again" /></label>}
-                    <button className="button button-primary form-submit" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Please wait…</> : <>{authMode === "signin" ? "Sign in securely" : "Create teacher account"} <span aria-hidden="true">→</span></>}</button>
+                    {authMode === "register" && <label className="consent-row"><input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of my account details to provide teacher services.</span></label>}
+                    <button className="button button-primary form-submit" type="submit" disabled={busy || (authMode === "register" && !privacyConsent)}>{busy ? <><span className="spinner" /> Please wait…</> : <>{authMode === "signin" ? "Sign in securely" : "Create teacher account"} <span aria-hidden="true">→</span></>}</button>
                   </form>
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
@@ -427,7 +439,7 @@ export function TeacherPortal() {
             <aside className="teacher-auth-aside"><div className="aside-emblem"><img src="/snhs-logo.webp" alt="Salvacion National High School seal" /></div><span className="section-kicker">FOR TEACHERS</span><h2>Classroom records,<br /><em>kept together.</em></h2><p>Organize your students in one class roster and enter grades by subject and semester.</p><div className="aside-rule" /><div className="teacher-feature"><span>01</span><p><b>Create your account</b><br />Sign up with your school email.</p></div><div className="teacher-feature"><span>02</span><p><b>Register your class</b><br />Choose your grade and section inside the portal.</p></div><div className="teacher-feature"><span>03</span><p><b>Record each semester</b><br />Save subject marks in a clear grade table.</p></div></aside>
           </div>
         )}
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} SNHS Gradebook</span><span>Salvacion National High School · Busuanga, Palawan</span><a href="/">Home</a></footer>
+        <footer className="portal-footer"><span>© {new Date().getFullYear()} SNHS Gradebook</span><span>Salvacion National High School · Busuanga, Palawan</span><nav className="portal-legal-links" aria-label="Footer links"><Link href="/">Home</Link><Link href="/teacher/messages">Contact inbox</Link><Link href="/contact">Contact</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
       </div>
     </main>
   );

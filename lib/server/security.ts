@@ -1,5 +1,5 @@
 import "server-only";
-import { createCipheriv, createHmac, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 function secret() {
   const value = process.env.SUPABASE_LRN_HMAC_SECRET;
@@ -9,11 +9,19 @@ function secret() {
   return value;
 }
 
-function encryptionKey() {
-  const value = process.env.SUPABASE_DATA_ENCRYPTION_KEY;
+function parseEncryptionKey(variableName: string) {
+  const value = process.env[variableName];
   const key = value ? Buffer.from(value, "base64") : Buffer.alloc(0);
-  if (key.length !== 32) throw new Error("SUPABASE_DATA_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
+  if (key.length !== 32) throw new Error(`${variableName} must be a base64-encoded 32-byte key.`);
   return key;
+}
+
+function encryptionKey() {
+  return parseEncryptionKey("SUPABASE_DATA_ENCRYPTION_KEY");
+}
+
+function contactEncryptionKey() {
+  return parseEncryptionKey("SUPABASE_CONTACT_ENCRYPTION_KEY");
 }
 
 export function normalizeName(name: string) {
@@ -46,6 +54,30 @@ export function encryptStudentBirthday(birthday: string) {
   const ciphertext = Buffer.concat([cipher.update(birthday, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${ciphertext.toString("base64url")}`;
+}
+
+/** Encrypts arbitrary short text with authenticated AES-256-GCM field encryption. */
+export function encryptSensitiveField(value: string) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", contactEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${ciphertext.toString("base64url")}`;
+}
+
+/** Decrypts values created by encryptSensitiveField; invalid or tampered data throws. */
+export function decryptSensitiveField(envelope: string) {
+  const [version, ivEncoded, tagEncoded, ciphertextEncoded, extra] = envelope.split(".");
+  if (version !== "v1" || !ivEncoded || !tagEncoded || ciphertextEncoded === undefined || extra !== undefined) {
+    throw new Error("Unsupported encrypted field format.");
+  }
+  const iv = Buffer.from(ivEncoded, "base64url");
+  const tag = Buffer.from(tagEncoded, "base64url");
+  const ciphertext = Buffer.from(ciphertextEncoded, "base64url");
+  if (iv.length !== 12 || tag.length !== 16) throw new Error("Invalid encrypted field envelope.");
+  const decipher = createDecipheriv("aes-256-gcm", contactEncryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }
 
 export function digestRequestIp(request: Request, subject?: string) {

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,9 +11,21 @@ export async function POST(request: Request) {
     if (!(await allowRequest(request, "student-grade-lookup", 10, 900))) {
       return jsonError("Too many attempts. Please wait a few minutes and try again.", 429);
     }
-    const rawBody: unknown = await request.json();
+    const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
+    if (contentType !== "application/json") return jsonError("Send the grade lookup as JSON.", 415);
+    const rawText = await request.text();
+    if (rawText.length > 4096) return jsonError("The grade lookup request is too large.", 413);
+    let rawBody: unknown;
+    try {
+      rawBody = JSON.parse(rawText);
+    } catch {
+      return jsonError("The grade lookup could not be read.");
+    }
     if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) return jsonError("The grade lookup could not be read.");
-    const body = rawBody as { fullName?: unknown; lrn?: unknown; pin?: unknown };
+    const body = rawBody as { fullName?: unknown; lrn?: unknown; pin?: unknown; privacyConsent?: unknown; privacyNoticeVersion?: unknown };
+    if (body.privacyConsent !== true || body.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {
+      return jsonError("Please review the Privacy Policy and confirm acknowledgement before looking up grades.", 400);
+    }
     const fullName = typeof body.fullName === "string" ? body.fullName.trim().replace(/\s+/g, " ") : "";
     const lrn = typeof body.lrn === "string" ? body.lrn.replace(/\D/g, "") : "";
     const pin = typeof body.pin === "string" ? body.pin : "";

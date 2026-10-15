@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, encryptStudentBirthday, jsonError } from "@/lib/server/security";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +19,14 @@ export async function POST(request: Request) {
     const birthday = String(form.get("birthday") ?? "");
     const sectionId = String(form.get("sectionId") ?? "");
     const gender = String(form.get("gender") ?? "Prefer not to say");
+    const privacyConsent = String(form.get("privacyConsent") ?? "") === "accepted";
+    const privacyNoticeVersion = String(form.get("privacyNoticeVersion") ?? "");
     const photoEntry = form.get("photo");
     const photo = photoEntry instanceof File ? photoEntry : null;
 
+    if (!privacyConsent || privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {
+      return jsonError("Please review the Privacy Policy and confirm consent before registering.", 400);
+    }
     if (fullName.length < 3 || fullName.length > 120) return jsonError("Enter your full name (3–120 characters).");
     if (lrn.length < 8 || lrn.length > 20) return jsonError("Enter a valid LRN using 8–20 digits.");
     if (!/^\d{4}$/.test(pin)) return jsonError("Choose a 4-digit PIN to protect your grade report.");
@@ -70,7 +76,9 @@ export async function POST(request: Request) {
       date_of_birth_encrypted: encryptStudentBirthday(birthday),
       gender,
       avatar_path: photoPath,
-      section_id: section.id
+      section_id: section.id,
+      privacy_notice_version: PRIVACY_NOTICE_VERSION,
+      privacy_consented_at: new Date().toISOString()
     });
     if (error) {
       if (photoPath) await admin.storage.from("profile-photos").remove([photoPath]);
