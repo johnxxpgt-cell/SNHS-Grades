@@ -1,5 +1,6 @@
 "use client";
 
+import { ensurePageRequestId, fetchWithRequestId, rotatePageRequestId } from "@/lib/request-id";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { PortalHeader } from "@/components/brand";
 import { ClassScorebook } from "@/components/class-scorebook";
@@ -97,6 +98,7 @@ export function TeacherPortal() {
   const [newParentFeedbackCount, setNewParentFeedbackCount] = useState(0);
 
   useEffect(() => {
+    ensurePageRequestId();
     if (!supabase) { setLoadingDashboard(false); return; }
     void supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ? { id: data.session.user.id, email: data.session.user.email } : null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -157,7 +159,7 @@ export function TeacherPortal() {
       const token = data.session?.access_token;
       if (!token) { if (active) setNewParentFeedbackCount(0); return; }
       try {
-        const response = await fetch("/api/parent-feedback?summary=1", {
+        const response = await fetchWithRequestId("/api/parent-feedback?summary=1", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store"
         });
@@ -203,7 +205,9 @@ export function TeacherPortal() {
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    const requestId = rotatePageRequestId();
     if (!supabase) { setError("Add your Supabase URL and publishable key to the environment settings first."); setBusy(false); return; }
+    let authStage: "sign_in" | "register" = authMode === "register" ? "register" : "sign_in";
     try {
       if (authMode === "register") {
         if (!privacyConsent) throw new Error("Please read the Privacy Policy and consent before creating an account.");
@@ -235,7 +239,14 @@ export function TeacherPortal() {
         if (data.user) setUser({ id: data.user.id, email: data.user.email });
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "We couldn’t complete that request.");
+      // Correlation ID only; never log credentials, email, or form contents.
+      console.error("[teacher-portal] authentication failed", {
+        requestId,
+        stage: authStage,
+        errorName: caught instanceof Error ? caught.name : "UnknownError"
+      });
+      const message = caught instanceof Error ? caught.message : "We couldn’t complete that request.";
+      setError(`${message} Reference ID: ${requestId}`);
     } finally { setBusy(false); }
   }
 

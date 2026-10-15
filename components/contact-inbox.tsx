@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PortalHeader } from "@/components/brand";
@@ -34,7 +35,7 @@ export function ContactInbox() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/contact", {
+      const response = await fetchWithRequestId("/api/contact", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store"
       });
@@ -77,7 +78,7 @@ export function ContactInbox() {
     setNotice("");
     setError("");
     try {
-      const response = await fetch("/api/contact", {
+      const response = await fetchWithRequestId("/api/contact", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
@@ -100,7 +101,7 @@ export function ContactInbox() {
     setNotice("");
     setError("");
     try {
-      const response = await fetch("/api/contact", {
+      const response = await fetchWithRequestId("/api/contact", {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         cache: "no-store",

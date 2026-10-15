@@ -74,3 +74,10 @@ The public homepage has clear **Register as a student** and **Teacher sign in** 
 After a successful student grade lookup with name, LRN, and PIN, the app redirects to `/student/dashboard`. The dashboard uses an HttpOnly signed session cookie so the student can refresh or reopen their report without putting their LRN, PIN, or student ID into a URL. Use **Log out** to clear the session. Grade tables use expandable sections and switch to labeled cards on mobile.
 
 See `STUDENT_DASHBOARD_SESSION_UPDATE.md` for route behavior, security notes, and deployment checks.
+
+
+## Request IDs / UUID query parameters
+
+The Student and Teacher portal entry links carry a fresh non-secret `request_id` UUID. Each first-party `/api/*` request also receives its own `request_id` query parameter and `X-Request-ID` header; `proxy.ts` forwards and logs the ID with method/path only, then echoes it in the response header. Server-side student lookup, registration, session, and parent-feedback logs can be correlated by this value. Teacher authentication is performed directly by Supabase Auth, so the portal attempt has a UUID reference but the Supabase request URL is deliberately left unchanged to avoid altering the provider's authentication API. These IDs are for diagnostics only and never grant access.
+
+See `REQUEST_ID_QUERY_PARAMETERS.md` for troubleshooting steps.

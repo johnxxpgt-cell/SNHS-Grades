@@ -1,5 +1,6 @@
 "use client";
 
+import { ensurePageRequestId, fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -57,7 +58,7 @@ export function StudentPortal() {
   const loadSections = useCallback(async () => {
     setSectionLoading(true);
     try {
-      const response = await fetch("/api/sections", { cache: "no-store" });
+      const response = await fetchWithRequestId("/api/sections", { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Sections could not be loaded.");
       setSections(payload.sections ?? []);
@@ -71,9 +72,10 @@ export function StudentPortal() {
   useEffect(() => { void loadSections(); }, [loadSections]);
   useEffect(() => () => { if (avatar) URL.revokeObjectURL(avatar); }, [avatar]);
   useEffect(() => {
+    ensurePageRequestId();
     const requestedMode = new URLSearchParams(window.location.search).get("mode");
     let active = true;
-    fetch("/api/students/session?check=1", { cache: "no-store", credentials: "same-origin" })
+    fetchWithRequestId("/api/students/session?check=1", { cache: "no-store", credentials: "same-origin" })
       .then((response) => {
         if (!active) return;
         if (response.ok) router.replace("/student/dashboard");
@@ -95,7 +97,7 @@ export function StudentPortal() {
     event.preventDefault();
     setBusy(true); setError(""); setNotice(""); setResult(null);
     try {
-      const response = await fetch("/api/students/lookup", {
+      const response = await fetchWithRequestId("/api/students/lookup", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fullName, lrn, pin,
@@ -104,7 +106,11 @@ export function StudentPortal() {
         })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "We couldn’t retrieve those grades.");
+      if (!response.ok) {
+        const message = payload.error || "We couldn’t retrieve those grades.";
+        const requestId = response.headers.get("X-Request-ID");
+        throw new Error(response.status >= 500 && requestId ? `${message} Reference ID: ${requestId}` : message);
+      }
       setPin("");
       router.replace("/student/dashboard");
     } catch (caught) {
@@ -119,7 +125,7 @@ export function StudentPortal() {
     if (!result) return;
     setFeedbackBusy(true); setFeedbackError(""); setFeedbackNotice("");
     try {
-      const response = await fetch("/api/students/feedback", {
+      const response = await fetchWithRequestId("/api/students/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -157,12 +163,19 @@ export function StudentPortal() {
       form.set("privacyConsent", registrationPrivacyConsent ? "accepted" : "");
       form.set("privacyNoticeVersion", PRIVACY_NOTICE_VERSION);
       if (avatarFile) form.set("photo", avatarFile, avatarFile.name);
-      const response = await fetch("/api/students/register", { method: "POST", body: form });
+      const response = await fetchWithRequestId("/api/students/register", { method: "POST", body: form });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Registration could not be completed.");
+      if (!response.ok) {
+        const message = payload.error || "Registration could not be completed.";
+        const requestId = response.headers.get("X-Request-ID");
+        throw new Error(response.status >= 500 && requestId ? `${message} Reference ID: ${requestId}` : message);
+      }
       setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}. Class adviser: ${payload.adviserName || "Class adviser not listed"}.`);
       setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName(""); setRegistrationPrivacyConsent(false);
       setMode("lookup");
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("mode");
+      window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Registration could not be completed.");
     } finally {

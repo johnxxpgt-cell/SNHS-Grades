@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, encryptSensitiveField, jsonError, verifyStudentFeedbackTicket, verifyStudentSessionTicket } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
@@ -6,10 +6,14 @@ import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function privateResponse(body: unknown, status = 200, clearTicket = false) {
+function privateResponse(body: unknown, status = 200, clearTicket = false, requestId?: string) {
   const response = Response.json(body, {
     status,
-    headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" }
+    headers: {
+      "Cache-Control": "no-store, private",
+      "X-Content-Type-Options": "nosniff",
+      ...(requestId ? { "X-Request-ID": requestId } : {})
+    }
   });
   if (clearTicket) {
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
@@ -36,12 +40,12 @@ function readCookie(request: Request, name: string) {
 
 /** Parent/guardian submission. The cookie is signed by the server after an LRN/PIN-protected lookup. */
 export async function POST(request: Request) {
-  const requestId = randomUUID();
+  const requestId = getRequestId(request);
   let stage = "request_validation";
   try {
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) return jsonError("Feedback must be submitted from the school website.", 403);
-    if (request.headers.get("sec-fetch-site") === "cross-site") return jsonError("Cross-site feedback requests are not accepted.", 403);
+    if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Feedback must be submitted from the school website.", requestId }, { status: 403, headers: { "Cache-Control": "no-store", "X-Request-ID": requestId } });
+    if (request.headers.get("sec-fetch-site") === "cross-site") return Response.json({ error: "Cross-site feedback requests are not accepted.", requestId }, { status: 403, headers: { "Cache-Control": "no-store", "X-Request-ID": requestId } });
 
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return jsonError("Send feedback as JSON.", 415);
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
     });
     if (insertError) throw insertError;
 
-    return privateResponse({ message: "Your feedback has been delivered to the class adviser for this section." }, 201, true);
+    return privateResponse({ message: "Your feedback has been delivered to the class adviser for this section.", requestId }, 201, true, requestId);
   } catch (error) {
     // Keep technical details in server logs only; never return secrets, SQL messages, or PII to the browser.
     const detail = error instanceof Error ? error.message : String(error);
@@ -136,6 +140,6 @@ export async function POST(request: Request) {
     return privateResponse({
       error: "We could not send your feedback right now. Please try again shortly.",
       requestId
-    }, 503);
+    }, 503, false, requestId);
   }
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Brand } from "@/components/brand";
+import { RequestIdLink } from "@/components/request-id-link";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
 
 export const metadata: Metadata = {
@@ -21,12 +22,12 @@ export default function HomePage() {
           <span className="nav-school-year">
             <span className="status-dot" /> Academic year {schoolYear}
           </span>
-          <Link href="/student" className="nav-student">
+          <RequestIdLink href="/student" className="nav-student">
             Student portal <span aria-hidden="true">→</span>
-          </Link>
-          <Link href="/teacher" className="nav-teacher">
+          </RequestIdLink>
+          <RequestIdLink href="/teacher" className="nav-teacher">
             Teacher sign in
-          </Link>
+          </RequestIdLink>
         </div>
       </nav>
 
@@ -46,12 +47,12 @@ export default function HomePage() {
             record close in one clear, secure student portal.
           </p>
           <div className="hero-actions">
-            <Link href="/student" className="button button-primary">
+            <RequestIdLink href="/student" className="button button-primary">
               View my grades <span aria-hidden="true">→</span>
-            </Link>
-            <Link href="/student?mode=register" className="button button-outline hero-register-button">
+            </RequestIdLink>
+            <RequestIdLink href="/student?mode=register" className="button button-outline hero-register-button">
               Register as a student
-            </Link>
+            </RequestIdLink>
             <span className="hero-action-note">
               Returning student? View grades. New student? Register here.
             </span>
@@ -160,12 +161,12 @@ export default function HomePage() {
               Look up a posted report with your full name and LRN, or register
               once to join your class section.
             </p>
-            <Link href="/student" className="student-guide-link">
+            <RequestIdLink href="/student" className="student-guide-link">
               Go to student portal <span aria-hidden="true">→</span>
-            </Link>
+            </RequestIdLink>
           </div>
           <div className="student-paths">
-            <Link href="/student" className="student-path student-path-link">
+            <RequestIdLink href="/student" className="student-path student-path-link">
               <span>
                 01 <i /> RETURNING STUDENT
               </span>
@@ -174,8 +175,8 @@ export default function HomePage() {
                 Enter the full name and LRN on your school record to view posted
                 grades by subject and term.
               </p>
-            </Link>
-            <Link
+            </RequestIdLink>
+            <RequestIdLink
               href="/student?mode=register"
               className="student-path student-path-link"
             >
@@ -187,7 +188,7 @@ export default function HomePage() {
                 Add your student details and select your class section. Your
                 grade level is set automatically.
               </p>
-            </Link>
+            </RequestIdLink>
           </div>
         </div>
       </section>
@@ -201,8 +202,8 @@ export default function HomePage() {
          <span>|</span><a href="https://darrenbardelas.xyz/">Made by Libarrium</a>
         </p>
         <nav className="footer-links" aria-label="Helpful links">
-          <Link href="/student?mode=register">Student registration</Link>
-          <Link href="/teacher">Teacher sign in / register</Link>
+          <RequestIdLink href="/student?mode=register">Student registration</RequestIdLink>
+          <RequestIdLink href="/teacher">Teacher sign in / register</RequestIdLink>
           <Link href="/contact">Contact</Link>
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/terms">Terms of Service</Link>

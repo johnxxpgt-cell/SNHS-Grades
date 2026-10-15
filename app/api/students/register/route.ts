@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, encryptStudentBirthday, jsonError } from "@/lib/server/security";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
@@ -8,6 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request);
   try {
     if (!(await allowRequest(request, "student-register", 5, 3600))) {
       return jsonError("Too many registration attempts. Please try again later.", 429);
@@ -100,7 +102,11 @@ export async function POST(request: Request) {
       adviserName: adviserProfile?.full_name?.trim() || "Class adviser not listed"
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    console.error("[students/register] Registration request failed:", error instanceof Error ? error.message : "Unknown error");
+    console.error("[api/students/register] request failed", {
+      requestId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      code: error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") || undefined : undefined
+    });
     return jsonError("We could not complete registration. Please try again shortly.", 503);
   }
 }

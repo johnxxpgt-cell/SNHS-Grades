@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
@@ -21,7 +22,7 @@ export function ContactForm({ privacyEmail }: { privacyEmail: string }) {
     setStatus("");
     setError("");
     try {
-      const response = await fetch("/api/contact", {
+      const response = await fetchWithRequestId("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",

@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -37,7 +38,7 @@ export function StudentGradeDashboard() {
     let active = true;
     async function loadReport() {
       try {
-        const response = await fetch("/api/students/session", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetchWithRequestId("/api/students/session", { cache: "no-store", credentials: "same-origin" });
         const payload = await response.json();
         if (!response.ok) {
           if (response.status === 401) {
@@ -63,7 +64,7 @@ export function StudentGradeDashboard() {
   async function logout() {
     setLoggingOut(true);
     try {
-      await fetch("/api/students/logout", { method: "POST", cache: "no-store", credentials: "same-origin" });
+      await fetchWithRequestId("/api/students/logout", { method: "POST", cache: "no-store", credentials: "same-origin" });
     } finally {
       router.replace("/student");
       router.refresh();
@@ -74,12 +75,16 @@ export function StudentGradeDashboard() {
     event.preventDefault();
     setFeedbackBusy(true); setFeedbackError(""); setFeedbackNotice("");
     try {
-      const response = await fetch("/api/students/feedback", {
+      const response = await fetchWithRequestId("/api/students/feedback", {
         method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", credentials: "same-origin",
         body: JSON.stringify({ guardianName, subjectName: feedbackSubject, message: feedbackMessage, privacyConsent: feedbackConsent, privacyNoticeVersion: PRIVACY_NOTICE_VERSION })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Feedback could not be sent.");
+      if (!response.ok) {
+        const message = payload.error || "Feedback could not be sent.";
+        const requestId = typeof payload.requestId === "string" ? payload.requestId : response.headers.get("X-Request-ID");
+        throw new Error(response.status >= 500 && requestId ? `${message} Reference ID: ${requestId}` : message);
+      }
       setFeedbackNotice(payload.message || "Feedback sent to the class adviser.");
       setGuardianName(""); setFeedbackSubject(""); setFeedbackMessage(""); setFeedbackConsent(false);
     } catch (error) {

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, createStudentFeedbackTicket, createStudentSessionTicket, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
@@ -7,6 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const requestId = getRequestId(request);
   try {
     if (!(await allowRequest(request, "student-grade-lookup", 10, 900))) {
       return jsonError("Too many attempts. Please wait a few minutes and try again.", 429);
@@ -203,6 +205,11 @@ export async function POST(request: Request) {
     response.headers.append("Set-Cookie", `snhs_student_session=${studentSession}; Path=/api/students; HttpOnly; SameSite=Strict; Max-Age=${60 * 60 * 24 * 30}${secure}`);
     return response;
   } catch (error) {
+    console.error("[api/students/lookup] request failed", {
+      requestId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      code: error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") || undefined : undefined
+    });
     if (error instanceof SyntaxError) return jsonError("The grade lookup could not be read.");
     return jsonError("Grade lookup is temporarily unavailable. Please try again shortly.", 503);
   }

@@ -1,4 +1,5 @@
 import { createStudentSessionTicket, verifyStudentSessionTicket, jsonError } from "@/lib/server/security";
+import { getRequestId } from "@/lib/server/request-id";
 import { getStudentGradeReport } from "@/lib/server/student-grade-report";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ function privateResponse(body: unknown, status = 200, renewedTicket?: string) {
 }
 
 export async function GET(request: Request) {
+  const requestId = getRequestId(request);
   try {
     const verified = verifyStudentSessionTicket(readCookie(request, "snhs_student_session"));
     if (!verified) return jsonError("Your student session has ended. Please sign in again.", 401);
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
     if (!report) return privateResponse({ error: "This student record is no longer available. Please contact your class adviser." }, 404);
     return privateResponse(report, 200, renewedTicket);
   } catch (error) {
-    console.error("[api/students/session] grade report failed", { name: error instanceof Error ? error.name : "UnknownError" });
+    console.error("[api/students/session] grade report failed", { requestId, name: error instanceof Error ? error.name : "UnknownError" });
     return privateResponse({ error: "Your grade report is temporarily unavailable. Please try again." }, 503);
   }
 }

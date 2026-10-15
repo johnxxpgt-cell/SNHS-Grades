@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PortalHeader } from "@/components/brand";
@@ -36,7 +37,7 @@ export function ParentFeedbackInbox() {
   const loadInbox = useCallback(async (token: string) => {
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/parent-feedback", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const response = await fetchWithRequestId("/api/parent-feedback", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Parent feedback could not be loaded.");
       setMessages(payload.messages ?? []);
@@ -65,7 +66,7 @@ export function ParentFeedbackInbox() {
     if (!accessToken) return;
     setBusyId(item.id); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/parent-feedback", {
+      const response = await fetchWithRequestId("/api/parent-feedback", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
