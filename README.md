@@ -49,3 +49,6 @@ The Privacy Policy and Terms are drafts that need approval from the responsible 
 The teacher dashboard now includes an Excel-style whole-class assessment table. Teachers select a section, subject, and quarter; add Written Works, Performance Tasks, and Summative Test/Exam columns; enter scores for each student; and save changed cells. Empty cells are missing scores, while `0` is a real score. Row-level security restricts records by teacher-owned class section, and a database trigger enforces student/section matching and score maximums.
 
 Before use, existing Supabase installations must apply `supabase/migrations/20261015_class_scorebook.sql`. The page can calculate a weighted initial score from one of the suggested weight profiles, but the school must confirm the exact subject weights and add/validate its official transmutation table before treating that value as the final quarterly grade. This feature does not yet publish these new scorebook scores to the existing student-facing grade report. See [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
+## Latest build fix
+
+The Open Graph image prerender error caused by a headline `div` containing `<br />` without an explicit display layout has been corrected in `app/opengraph-image.tsx`. See `BUILD_FIX_NOTES.md` for the cause and verification status.

@@ -19,7 +19,10 @@ export default function OpenGraphImage() {
         </div>
         <div style={{ maxWidth: 820, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ fontFamily: "Arial, sans-serif", color: "#657285", fontSize: 20, letterSpacing: 4 }}>SALVACION NATIONAL HIGH SCHOOL</div>
-          <div style={{ fontSize: 68, lineHeight: 1.03, letterSpacing: -2 }}>School records,<br />made clear.</div>
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 68, lineHeight: 1.03, letterSpacing: -2 }}>
+            <span>School records,</span>
+            <span>made clear.</span>
+          </div>
           <div style={{ fontFamily: "Arial, sans-serif", fontSize: 24, color: "#58677a", maxWidth: 750 }}>A clear, secure grade portal for students and teachers in Busuanga, Palawan.</div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "Arial, sans-serif", fontSize: 15, color: "#667487", letterSpacing: 3 }}>
