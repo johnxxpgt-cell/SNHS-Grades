@@ -8,7 +8,7 @@ type GradebookAssessment = {
   id: string;
   section_id: string;
   subject_name: string;
-  grading_period: number;
+  term_number: number;
   category: ScoreCategory;
   assessment_name: string;
   max_score: number | string;
@@ -94,7 +94,7 @@ export function ClassScorebook({
   const [subjects, setSubjects] = useState<GradebookSubject[]>([]);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [activeSubject, setActiveSubject] = useState("");
-  const [activePeriod, setActivePeriod] = useState(1);
+  const [activeTerm, setActiveTerm] = useState(1);
   const [weightProfile, setWeightProfile] = useState<WeightProfile>("mathScience");
   const [assessments, setAssessments] = useState<GradebookAssessment[]>([]);
   const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
@@ -154,10 +154,10 @@ export function ClassScorebook({
     setError("");
     const { data: assessmentRows, error: assessmentError } = await supabase
       .from("gradebook_assessments")
-      .select("id, section_id, subject_name, grading_period, category, assessment_name, max_score, assessed_on, created_by, created_at")
+      .select("id, section_id, subject_name, term_number, category, assessment_name, max_score, assessed_on, created_by, created_at")
       .eq("section_id", sectionId)
       .eq("subject_name", activeSubject.trim())
-      .eq("grading_period", activePeriod)
+      .eq("term_number", activeTerm)
       .order("created_at", { ascending: true });
 
     if (assessmentError) {
@@ -198,7 +198,7 @@ export function ClassScorebook({
     setScoreInputs(nextScores);
     setChangedCells({});
     setLoading(false);
-  }, [supabase, sectionId, activeSubject, activePeriod, studentIdsKey]);
+  }, [supabase, sectionId, activeSubject, activeTerm, studentIdsKey]);
 
   useEffect(() => { void loadScorebook(); }, [loadScorebook]);
   useEffect(() => { setWeightProfile(recommendedProfile(activeSubject)); }, [activeSubject]);
@@ -273,7 +273,7 @@ export function ClassScorebook({
     const { error: insertError } = await supabase.from("gradebook_assessments").insert({
       section_id: sectionId,
       subject_name: activeSubject.trim(),
-      grading_period: activePeriod,
+      term_number: activeTerm,
       category,
       assessment_name: cleanName,
       max_score: max,
@@ -282,7 +282,7 @@ export function ClassScorebook({
     });
     if (insertError) {
       console.error("[class-scorebook] Assessment insert failed:", insertError);
-      setError(insertError.code === "23505" ? "An assessment with this name already exists in this subject and quarter." : "The assessment could not be saved. Check the class scorebook migration and try again.");
+      setError(insertError.code === "23505" ? "An assessment with this name already exists in this subject and term." : "The assessment could not be saved. Check the class scorebook migration and try again.");
       setSaving(false);
       return;
     }
@@ -379,7 +379,7 @@ export function ClassScorebook({
       <div className="scorebook-subject-manager">
         <div className="scorebook-controls">
           <label className="field"><span>Saved subject</span><select value={activeSubject} onChange={(event) => { setActiveSubject(event.target.value); setError(""); setNotice(""); }} disabled={!subjects.length || saving}><option value="">{subjects.length ? "Choose a subject" : "Create your first subject"}</option>{subjects.map((subject) => <option value={subject.subject_name} key={subject.id}>{subject.subject_name}</option>)}</select></label>
-          <label className="field"><span>Grading period</span><select value={activePeriod} onChange={(event) => { setActivePeriod(Number(event.target.value)); setError(""); setNotice(""); }}>{[1, 2, 3, 4].map((period) => <option value={period} key={period}>Quarter {period}</option>)}</select></label>
+          <label className="field"><span>Term</span><select value={activeTerm} onChange={(event) => { setActiveTerm(Number(event.target.value)); setError(""); setNotice(""); }}>{[1, 2, 3].map((term) => <option value={term} key={term}>Term {term}</option>)}</select></label>
           <button className="button button-outline" type="button" onClick={() => void handleAddSubjectToRoster()} disabled={saving || !activeSubject}>{saving ? "Working…" : "+ Add subject to grade roster"}</button>
         </div>
         <form className="scorebook-create-subject" onSubmit={handleCreateSubject}>
@@ -394,7 +394,7 @@ export function ClassScorebook({
       </div>
 
       <form className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
-        <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject || "Choose a subject"} · Quarter {activePeriod}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
+        <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject || "Choose a subject"} · Term {activeTerm}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
         <div className="scorebook-add-grid">
           <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item}>{item}</option>)}</select></label>
           <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} minLength={2} maxLength={100} required placeholder="e.g. Written Work 1" /></label>
@@ -414,8 +414,8 @@ export function ClassScorebook({
         {hasAnyEditedCell && <button type="button" className="button button-primary scorebook-save" onClick={() => void handleSaveScores()} disabled={saving}>{saving ? "Saving scores…" : `Save ${Object.keys(changedCells).length} changed cells`}</button>}
       </div>
 
-      <div className="scorebook-table-wrap">
-        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>{activeSubject ? `No assessments for ${activeSubject}, Quarter ${activePeriod} yet.` : "Create or choose a saved subject first."}</strong><p>{activeSubject ? "Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook." : "Save a subject above. It will remain in the dropdown whenever you reopen this scorebook for this section."}</p></div> : (
+      <div className="scorebook-desktop-table-wrap scorebook-table-wrap">
+        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>{activeSubject ? `No assessments for ${activeSubject}, Term ${activeTerm} yet.` : "Create or choose a saved subject first."}</strong><p>{activeSubject ? "Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook." : "Save a subject above. It will remain in the dropdown whenever you reopen this scorebook for this section."}</p></div> : (
           <table className="scorebook-table">
             <thead><tr><th className="scorebook-student-col">Student</th>{sortedAssessments.map((assessment) => <th key={assessment.id}><div className="scorebook-assessment-heading"><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Max: {Number(assessment.max_score)}</small><button type="button" onClick={() => void handleDeleteAssessment(assessment)} aria-label={`Delete ${assessment.assessment_name}`} disabled={saving}>Delete column</button></div></th>)}<th className="scorebook-grade-col">Initial<br />weighted score</th></tr></thead>
             <tbody>
@@ -426,7 +426,7 @@ export function ClassScorebook({
                   {sortedAssessments.map((assessment) => {
                     const key = cellKey(assessment.id, student.id);
                     const value = scoreInputs[key] ?? "";
-                    return <td key={assessment.id}><input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} /></td>;
+                    return <td key={assessment.id} data-label={`${assessment.category}: ${assessment.assessment_name}`}><input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} /></td>;
                   })}
                   <td className="scorebook-grade-cell">{grade === null ? <span className="scorebook-incomplete">Incomplete</span> : <strong className={grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade.toFixed(2)}</strong>}</td>
                 </tr>;
@@ -436,7 +436,36 @@ export function ClassScorebook({
           </table>
         )}
       </div>
-      <div className="scorebook-footer"><p>Blank cells mean “not entered”; a score of 0 is a real score. Initial weighted scores appear only after all three assessment categories exist and all of that student’s scores in the selected quarter are entered.</p><p>These are weighted initial scores, not official transmuted quarterly grades. Configure the school-approved transmutation table and verify grading weights before using them for official reporting.</p></div>
+
+      <div className="scorebook-mobile-view">
+        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Students appear here after registering for this section.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>{activeSubject ? `No assessments for ${activeSubject}, Term ${activeTerm} yet.` : "Choose or create a saved subject first."}</strong><p>{activeSubject ? "Add an assessment column above to begin entering scores." : "Save a subject once; it will be available in the dropdown next time."}</p></div> : !visibleStudents.length ? <div className="scorebook-empty">No students match the current search.</div> : <>
+          <section className="scorebook-mobile-assessment-list" aria-label="Manage assessment columns">
+            <div className="scorebook-mobile-subheading"><div><span className="form-overline">ASSESSMENTS IN THIS TERM</span><h3>{activeSubject} · Term {activeTerm}</h3></div><span>{sortedAssessments.length} columns</span></div>
+            {sortedAssessments.map((assessment) => <div className="scorebook-mobile-assessment" key={assessment.id}>
+              <div><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Highest score: {Number(assessment.max_score)}</small></div>
+              <button type="button" onClick={() => void handleDeleteAssessment(assessment)} disabled={saving} aria-label={`Delete ${assessment.assessment_name}`}>Remove</button>
+            </div>)}
+          </section>
+          <div className="scorebook-mobile-roster">
+            {visibleStudents.map((student) => {
+              const grade = computedGrades.find((row) => row.studentId === student.id)?.value ?? null;
+              return <article className="scorebook-mobile-student-card" key={student.id}>
+                <header><div><strong>{student.full_name}</strong><small>{grade === null ? "Some scores still needed" : grade >= 75 ? "Initial score at/above 75" : "Initial score below 75"}</small></div><span className={grade === null ? "scorebook-incomplete" : grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade === null ? "Incomplete" : grade.toFixed(2)}</span></header>
+                {sortedAssessments.map((assessment) => {
+                  const key = cellKey(assessment.id, student.id);
+                  const value = scoreInputs[key] ?? "";
+                  return <label className="scorebook-mobile-score-field" key={assessment.id}>
+                    <span><small>{assessment.category}</small><strong>{assessment.assessment_name}</strong><em>Max {Number(assessment.max_score)}</em></span>
+                    <input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} />
+                  </label>;
+                })}
+              </article>;
+            })}
+          </div>
+        </>}
+      </div>
+
+      <div className="scorebook-footer"><p>Blank cells mean “not entered”; a score of 0 is a real score. Initial weighted scores appear only after all three assessment categories exist and all of that student’s scores in the selected term are entered.</p><p>These are weighted initial scores, not official transmuted term grades. Configure the school-approved transmutation table and verify grading weights before using them for official reporting.</p></div>
       <div className="scorebook-tools"><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter students in scorebook" aria-label="Filter students in scorebook" /></label><span>Categories present: {CATEGORY_ORDER.map((item) => `${item} ${categoriesPresent.has(item) ? "✓" : "—"}`).join(" · ")}</span></div>
     </section>
   );

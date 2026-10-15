@@ -1,6 +1,6 @@
 # SNHS Gradebook
 
-A responsive grade portal for Salvacion National High School. Students register into an open teacher section and look up their report with their full name, LRN, and 4-digit PIN. Teachers use Supabase Auth to manage their class roster, three-semester marks, assessment scores, student comments, and a class-wide E-Class-Record-style scorebook.
+A responsive grade portal for Salvacion National High School. Students register into an open teacher section and look up their report with their full name, LRN, and 4-digit PIN. Teachers use Supabase Auth to manage their class roster, three-term marks, assessment scores, student comments, and a class-wide E-Class-Record-style scorebook.
 
 ## Stack
 
@@ -12,7 +12,7 @@ A responsive grade portal for Salvacion National High School. Students register 
 ## Local setup
 
 1. Create a Supabase project.
-2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply pending original migrations first, then [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql), [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql), and finally [`supabase/migrations/20261015_subject_roster_parent_feedback.sql`](supabase/migrations/20261015_subject_roster_parent_feedback.sql). Check which migrations have already been run before applying them.
+2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply pending original migrations first, then [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql), [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql), then [`supabase/migrations/20261015_subject_roster_parent_feedback.sql`](supabase/migrations/20261015_subject_roster_parent_feedback.sql), and lastly [`supabase/migrations/20261015_terms_mobile_ux.sql`](supabase/migrations/20261015_terms_mobile_ux.sql). Check which migrations have already been run before applying them.
 3. Copy [`.env.example`](.env.example) to `.env.local` and configure Supabase URL, browser publishable key, server secret key, stable HMAC, birthday-encryption and contact-encryption keys, canonical URL and the official school privacy contact. Optional Google integrations stay disabled until their values are set.
 4. Install and start the app with `npm ci` and `npm run dev`.
 5. In Supabase Auth, enable email confirmation for teacher accounts and allow the deployed `/auth/callback` URL. In Vercel, explicitly set `NEXT_PUBLIC_APP_URL` to the real canonical production origin and redeploy.
@@ -49,9 +49,9 @@ The Privacy Policy and Terms are drafts that need approval from the responsible 
 
 ## Class scorebook
 
-The teacher dashboard now includes an Excel-style whole-class assessment table. Teachers select a section, subject, and quarter; add Written Works, Performance Tasks, and Summative Test/Exam columns; enter scores for each student; and save changed cells. Empty cells are missing scores, while `0` is a real score. Row-level security restricts records by teacher-owned class section, and a database trigger enforces student/section matching and score maximums.
+The teacher dashboard now includes an Excel-style whole-class assessment table. Teachers select a section, subject, and term; add Written Works, Performance Tasks, and Summative Test/Exam columns; enter scores for each student; and save changed cells. Empty cells are missing scores, while `0` is a real score. Row-level security restricts records by teacher-owned class section, and a database trigger enforces student/section matching and score maximums.
 
-Before use, existing Supabase installations must apply `supabase/migrations/20261015_class_scorebook.sql` and then `supabase/migrations/20261015_subject_roster_parent_feedback.sql`. Teachers can save subjects to a section-specific catalog and choose them from a dropdown on later visits. The **Add subject to grade roster** action adds blank three-semester rows for existing students without overwriting existing marks; an insert trigger seeds already-saved subjects for students registered later. Entered scorebook assessment scores are also included in the private student/parent report. The page can calculate a weighted initial score from one of the suggested weight profiles, but the school must confirm the exact subject weights and official transmutation table before treating that value as the final quarterly grade. See [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
+Before use, existing Supabase installations must apply `supabase/migrations/20261015_class_scorebook.sql` and then `supabase/migrations/20261015_subject_roster_parent_feedback.sql`. Teachers can save subjects to a section-specific catalog and choose them from a dropdown on later visits. The **Add subject to grade roster** action adds blank three-term rows for existing students without overwriting existing marks; an insert trigger seeds already-saved subjects for students registered later. Entered scorebook assessment scores are also included in the private student/parent report. The page can calculate a weighted initial score from one of the suggested weight profiles, but the school must confirm the exact subject weights and official transmutation table before treating that value as the final term grade. See [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
 
 ## Parent/guardian feedback and class adviser
 
@@ -59,3 +59,12 @@ A verified private grade lookup enables a privacy-consented feedback form. Feedb
 ## Latest build fix
 
 The Open Graph image prerender error caused by a headline `div` containing `<br />` without an explicit display layout has been corrected in `app/opengraph-image.tsx`. See `BUILD_FIX_NOTES.md` for the cause and verification status.
+
+
+## Three-term grading and mobile improvements
+
+The current UI and active API/database keys use **Term 1**, **Term 2**, and **Term 3** only (`term_1`, `term_2`, `term_3`, and `term_number`). The historical migration files still mention old semester/quarter names only so the upgrade can safely recognize and migrate existing database columns; these are not labels exposed by the current interface.
+
+For an existing installation, first back up the database and apply any pending original scorebook and subject/feedback migrations in dependency order. Then apply `supabase/migrations/20261015_terms_mobile_ux.sql` exactly once. It renames old grade columns to term keys, converts scorebook period 4 into Term 3 without deleting assessment scores, and safely renames colliding assessment labels before adding the three-term constraint. Because former periods 3 and 4 are consolidated into Term 3, review the Term 3 assessment list after migration. For a fresh installation, use the current `supabase/schema.sql` instead of replaying upgrade migrations on top of it.
+
+The public homepage has clear **Register as a student** and **Teacher sign in** entry points. On a phone, student registration/grade lookup appears as two stacked choices, the class scorebook switches to touch-friendly student cards, and grade reports show one subject/assessment card at a time rather than forcing wide horizontal scrolling.

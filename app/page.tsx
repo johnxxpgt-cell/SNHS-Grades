@@ -24,6 +24,9 @@ export default function HomePage() {
           <Link href="/student" className="nav-student">
             Student portal <span aria-hidden="true">→</span>
           </Link>
+          <Link href="/teacher" className="nav-teacher">
+            Teacher sign in
+          </Link>
         </div>
       </nav>
 
@@ -39,15 +42,18 @@ export default function HomePage() {
             <em>to your progress.</em>
           </h1>
           <p className="hero-lede">
-            See your grades across all three semesters and keep your school
+            See your grades across all three terms and keep your school
             record close in one clear, secure student portal.
           </p>
           <div className="hero-actions">
             <Link href="/student" className="button button-primary">
-              Open student portal <span aria-hidden="true">→</span>
+              View my grades <span aria-hidden="true">→</span>
+            </Link>
+            <Link href="/student?mode=register" className="button button-outline hero-register-button">
+              Register as a student
             </Link>
             <span className="hero-action-note">
-              Grade lookup and student registration
+              Returning student? View grades. New student? Register here.
             </span>
           </div>
           <div className="hero-footnote">
@@ -89,9 +95,9 @@ export default function HomePage() {
             </div>
             <div className="report-grade-head">
               <span>SUBJECT</span>
-              <span>S1</span>
-              <span>S2</span>
-              <span>S3</span>
+              <span>T1</span>
+              <span>T2</span>
+              <span>T3</span>
               <span>FINAL</span>
             </div>
             <div className="report-row">
@@ -166,7 +172,7 @@ export default function HomePage() {
               <h3>View your grades</h3>
               <p>
                 Enter the full name and LRN on your school record to view posted
-                grades by subject and semester.
+                grades by subject and term.
               </p>
             </Link>
             <Link
@@ -195,6 +201,8 @@ export default function HomePage() {
          <span>|</span><a href="https://darrenbardelas.xyz/">Made by Libarrium</a>
         </p>
         <nav className="footer-links" aria-label="Helpful links">
+          <Link href="/student?mode=register">Student registration</Link>
+          <Link href="/teacher">Teacher sign in / register</Link>
           <Link href="/contact">Contact</Link>
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/terms">Terms of Service</Link>

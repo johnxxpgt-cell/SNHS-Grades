@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, encryptSensitiveField, jsonError, verifyStudentFeedbackTicket } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
@@ -35,6 +36,8 @@ function readCookie(request: Request, name: string) {
 
 /** Parent/guardian submission. The cookie is signed by the server after an LRN/PIN-protected lookup. */
 export async function POST(request: Request) {
+  const requestId = randomUUID();
+  let stage = "request_validation";
   try {
     const origin = request.headers.get("origin");
     if (origin && origin !== new URL(request.url).origin) return jsonError("Feedback must be submitted from the school website.", 403);
@@ -58,16 +61,21 @@ export async function POST(request: Request) {
     if (guardianName.length < 2) return jsonError("Enter the parent or guardian's name (at least 2 characters).", 400);
     if (message.length < 10) return jsonError("Write at least 10 characters so the teacher understands your feedback.", 400);
 
+    stage = "verify_grade_lookup_ticket";
     const ticket = verifyStudentFeedbackTicket(readCookie(request, "snhs_feedback_ticket"));
     if (!ticket) return jsonError("Your grade-view verification has expired. Look up the grade report again before sending feedback.", 401);
+    stage = "global_rate_limit";
     if (!(await allowRequest(request, "student-parent-feedback", 4, 3600))) {
       return jsonError("Too many feedback messages have been sent. Please try again later.", 429);
     }
+    stage = "student_rate_limit";
     if (!(await allowRequest(request, "student-parent-feedback-student", 3, 3600, ticket.studentId))) {
       return jsonError("This student record has reached its hourly feedback limit. Please try again later.", 429);
     }
 
+    stage = "supabase_admin_client";
     const admin = getSupabaseAdmin();
+    stage = "load_student_and_section";
     const { data: student, error: studentError } = await admin
       .from("students")
       .select("id, section_id, section:teacher_sections(id, teacher_id)")
@@ -81,6 +89,7 @@ export async function POST(request: Request) {
 
     let verifiedSubject: string | null = null;
     if (subjectName) {
+      stage = "verify_subject";
       const { data: subjectRows, error: subjectError } = await admin
         .from("gradebook_subjects")
         .select("subject_name")
@@ -90,12 +99,17 @@ export async function POST(request: Request) {
       if (!verifiedSubject) return jsonError("Choose a subject from this student's saved class subjects, or select general feedback.", 400);
     }
 
+    stage = "encrypt_feedback";
+    const guardianNameEncrypted = encryptSensitiveField(guardianName);
+    const messageEncrypted = encryptSensitiveField(message);
+
+    stage = "insert_feedback";
     const { error: insertError } = await admin.from("student_parent_feedback").insert({
       student_id: student.id,
       section_id: joinedSection.id,
       teacher_id: joinedSection.teacher_id,
-      guardian_name_encrypted: encryptSensitiveField(guardianName),
-      message_encrypted: encryptSensitiveField(message),
+      guardian_name_encrypted: guardianNameEncrypted,
+      message_encrypted: messageEncrypted,
       subject_name: verifiedSubject,
       status: "new",
       privacy_notice_version: PRIVACY_NOTICE_VERSION,
@@ -104,7 +118,22 @@ export async function POST(request: Request) {
     if (insertError) throw insertError;
 
     return privateResponse({ message: "Your feedback has been delivered to the class adviser for this section." }, 201, true);
-  } catch {
-    return jsonError("We could not send your feedback right now. Please try again shortly.", 503);
+  } catch (error) {
+    // Keep technical details in server logs only; never return secrets, SQL messages, or PII to the browser.
+    const detail = error instanceof Error ? error.message : String(error);
+    const code = error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+    console.error("[api/students/feedback] submission failed", {
+      requestId,
+      stage,
+      name: error instanceof Error ? error.name : "UnknownError",
+      code: code || undefined,
+      detail
+    });
+    return privateResponse({
+      error: "We could not send your feedback right now. Please try again shortly.",
+      requestId
+    }, 503);
   }
 }

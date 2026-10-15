@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
     const [gradeResult, assessmentResult, scorebookAssessmentResult, catalogueResult, commentResult] = await Promise.all([
       admin.from("subject_grades")
-        .select("id, subject_name, semester_1, semester_2, semester_3, updated_at")
+        .select("id, subject_name, term_1, term_2, term_3, updated_at")
         .eq("student_id", student.id)
         .order("subject_name"),
       admin.from("student_assessments")
@@ -100,9 +100,9 @@ export async function POST(request: Request) {
         .order("assessed_on", { ascending: false })
         .order("updated_at", { ascending: false }),
       admin.from("gradebook_assessments")
-        .select("id, subject_name, grading_period, category, assessment_name, max_score, assessed_on, created_at")
+        .select("id, subject_name, term_number, category, assessment_name, max_score, assessed_on, created_at")
         .eq("section_id", student.section_id)
-        .order("grading_period", { ascending: true })
+        .order("term_number", { ascending: true })
         .order("assessed_on", { ascending: false }),
       admin.from("gradebook_subjects")
         .select("subject_name")
@@ -130,13 +130,13 @@ export async function POST(request: Request) {
     if (scorebookScoreError) throw scorebookScoreError;
     const grades = gradeResult.data;
     const subjects = (grades ?? []).map((grade) => {
-      const semesters = [grade.semester_1, grade.semester_2, grade.semester_3]
+      const terms = [grade.term_1, grade.term_2, grade.term_3]
         .map((value) => value === null ? null : Number(value));
-      const scored = semesters.filter((value): value is number => value !== null && Number.isFinite(value));
+      const scored = terms.filter((value): value is number => value !== null && Number.isFinite(value));
       return {
         id: grade.id,
         subject: grade.subject_name,
-        semesters,
+        terms,
         finalGrade: scored.length ? Math.round(scored.reduce((sum, value) => sum + value, 0) / scored.length) : null,
         updatedAt: grade.updated_at
       };
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
       assessedOn: assessment.assessed_on,
       updatedAt: assessment.updated_at,
       subject: null as string | null,
-      gradingPeriod: null as number | null,
+      termNumber: null as number | null,
       source: "legacy" as const
     }));
     const scoreByAssessment = new Map((scorebookScores ?? []).map((score) => [score.assessment_id, score]));
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
         assessedOn: assessment.assessed_on,
         updatedAt: score.updated_at ?? assessment.created_at,
         subject: assessment.subject_name,
-        gradingPeriod: Number(assessment.grading_period),
+        termNumber: Number(assessment.term_number),
         source: "scorebook" as const
       }];
     });

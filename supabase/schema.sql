@@ -51,9 +51,9 @@ create table if not exists public.subject_grades (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.students (id) on delete cascade,
   subject_name text not null check (char_length(subject_name) between 2 and 80),
-  semester_1 numeric(5,2) constraint subject_grades_semester_1_range check (semester_1 is null or semester_1 between 0 and 100),
-  semester_2 numeric(5,2) constraint subject_grades_semester_2_range check (semester_2 is null or semester_2 between 0 and 100),
-  semester_3 numeric(5,2) constraint subject_grades_semester_3_range check (semester_3 is null or semester_3 between 0 and 100),
+  term_1 numeric(5,2) constraint subject_grades_term_1_range check (term_1 is null or term_1 between 0 and 100),
+  term_2 numeric(5,2) constraint subject_grades_term_2_range check (term_2 is null or term_2 between 0 and 100),
+  term_3 numeric(5,2) constraint subject_grades_term_3_range check (term_3 is null or term_3 between 0 and 100),
   updated_by uuid not null references auth.users (id),
   updated_at timestamptz not null default now(),
   constraint subject_grades_unique_student_subject unique (student_id, subject_name)
@@ -61,9 +61,9 @@ create table if not exists public.subject_grades (
 
 alter table public.students add column if not exists avatar_path text;
 
-alter table public.subject_grades add column if not exists semester_1 numeric(5,2);
-alter table public.subject_grades add column if not exists semester_2 numeric(5,2);
-alter table public.subject_grades add column if not exists semester_3 numeric(5,2);
+alter table public.subject_grades add column if not exists term_1 numeric(5,2);
+alter table public.subject_grades add column if not exists term_2 numeric(5,2);
+alter table public.subject_grades add column if not exists term_3 numeric(5,2);
 do $$
 begin
   if exists (
@@ -81,14 +81,14 @@ begin
   ) then
     execute $migration$
       update public.subject_grades
-      set semester_1 = coalesce(semester_1, quarter_1),
-          semester_2 = coalesce(semester_2, quarter_2),
-          semester_3 = coalesce(semester_3,
+      set term_1 = coalesce(term_1, quarter_1),
+          term_2 = coalesce(term_2, quarter_2),
+          term_3 = coalesce(term_3,
             case
               when quarter_3 is not null and quarter_4 is not null then round((quarter_3 + quarter_4) / 2, 2)
               else coalesce(quarter_3, quarter_4)
             end)
-      where semester_1 is null or semester_2 is null or semester_3 is null
+      where term_1 is null or term_2 is null or term_3 is null
     $migration$;
   end if;
 end;
@@ -96,14 +96,14 @@ $$;
 
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_1_range') then
-    alter table public.subject_grades add constraint subject_grades_semester_1_range check (semester_1 is null or semester_1 between 0 and 100);
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_term_1_range') then
+    alter table public.subject_grades add constraint subject_grades_term_1_range check (term_1 is null or term_1 between 0 and 100);
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_2_range') then
-    alter table public.subject_grades add constraint subject_grades_semester_2_range check (semester_2 is null or semester_2 between 0 and 100);
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_term_2_range') then
+    alter table public.subject_grades add constraint subject_grades_term_2_range check (term_2 is null or term_2 between 0 and 100);
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'subject_grades_semester_3_range') then
-    alter table public.subject_grades add constraint subject_grades_semester_3_range check (semester_3 is null or semester_3 between 0 and 100);
+  if not exists (select 1 from pg_constraint where conname = 'subject_grades_term_3_range') then
+    alter table public.subject_grades add constraint subject_grades_term_3_range check (term_3 is null or term_3 between 0 and 100);
   end if;
 end;
 $$;
@@ -462,14 +462,14 @@ create table if not exists public.gradebook_assessments (
   id uuid primary key default gen_random_uuid(),
   section_id uuid not null references public.teacher_sections (id) on delete cascade,
   subject_name text not null check (char_length(btrim(subject_name)) between 2 and 80),
-  grading_period smallint not null check (grading_period between 1 and 4),
+  term_number smallint not null check (term_number between 1 and 3),
   category text not null check (category in ('Written Works', 'Performance Tasks', 'Summative Test/Exam')),
   assessment_name text not null check (char_length(btrim(assessment_name)) between 2 and 100),
   max_score numeric(8,2) not null check (max_score > 0 and max_score <= 100000),
   assessed_on date not null default current_date,
   created_by uuid not null references auth.users (id),
   created_at timestamptz not null default now(),
-  constraint gradebook_assessments_unique_name unique (section_id, subject_name, grading_period, category, assessment_name)
+  constraint gradebook_assessments_unique_name unique (section_id, subject_name, term_number, category, assessment_name)
 );
 
 create table if not exists public.gradebook_scores (
@@ -484,7 +484,7 @@ create table if not exists public.gradebook_scores (
 );
 
 create index if not exists gradebook_assessments_section_subject_idx
-  on public.gradebook_assessments (section_id, subject_name, grading_period, category, created_at);
+  on public.gradebook_assessments (section_id, subject_name, term_number, category, created_at);
 create index if not exists gradebook_scores_assessment_idx
   on public.gradebook_scores (assessment_id, student_id);
 
@@ -742,7 +742,7 @@ begin
     raise exception 'Create the subject before adding it to the roster' using errcode = '22023';
   end if;
 
-  insert into public.subject_grades(student_id, subject_name, semester_1, semester_2, semester_3, updated_by, updated_at)
+  insert into public.subject_grades(student_id, subject_name, term_1, term_2, term_3, updated_by, updated_at)
   select st.id, v_subject, null, null, null, (select auth.uid()), now()
     from public.students st
    where st.section_id = p_section_id
@@ -763,7 +763,7 @@ grant execute on function public.add_subject_to_section_roster(uuid, text) to au
 
 -- New students automatically receive blank legacy subject-grade rows for subjects already saved for their section.
 -- The class scorebook itself derives its student roster from students.section_id; this trigger keeps the traditional
--- three-semester grade table in sync without overwriting any existing marks.
+-- three-term grade table in sync without overwriting any existing marks.
 create or replace function public.seed_student_gradebook_subjects()
 returns trigger
 language plpgsql
@@ -781,7 +781,7 @@ begin
     return new;
   end if;
 
-  insert into public.subject_grades(student_id, subject_name, semester_1, semester_2, semester_3, updated_by, updated_at)
+  insert into public.subject_grades(student_id, subject_name, term_1, term_2, term_3, updated_by, updated_at)
   select new.id, subj.subject_name, null, null, null, v_teacher_id, now()
     from public.gradebook_subjects subj
    where subj.section_id = new.section_id

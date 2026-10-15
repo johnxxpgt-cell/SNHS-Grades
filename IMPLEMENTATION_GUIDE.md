@@ -36,6 +36,7 @@ supabase/
   migrations/20261015_privacy_contact.sql
   migrations/20261015_class_scorebook.sql # Class-wide assessment definitions and per-student scores with RLS
   migrations/20261015_subject_roster_parent_feedback.sql # Subject catalogue, safe roster seeding, encrypted parent feedback
+  migrations/20261015_terms_mobile_ux.sql # Rename active grading period fields and map legacy period 4 into Term 3
 next.config.ts                     # Additional security headers
 .env.example                       # New optional SEO/analytics/contact settings
 AUDIT_REPORT.md                    # Audit categories and residual risks
@@ -82,7 +83,7 @@ Never commit `.env.local`. The `.gitignore` already ignores `.env*` except `.env
 ## 3. Apply the Supabase SQL
 
 - **Fresh Supabase project:** run `supabase/schema.sql` in the Supabase SQL Editor. It includes the existing portal schema, contact submission storage, and the new class scorebook tables.
-- **Existing project:** apply only migrations not yet installed, in dependency order: `supabase/migrations/20261015_privacy_contact.sql` (if missing), `supabase/migrations/20261015_class_scorebook.sql`, and `supabase/migrations/20261015_subject_roster_parent_feedback.sql`. The subject/feedback migration depends on the `gradebook_assessments` and `gradebook_scores` tables created by the scorebook migration. These migrations are additive; review your migration history before running them.
+- **Existing project:** apply only migrations not yet installed, in dependency order: `supabase/migrations/20261015_privacy_contact.sql` (if missing), `supabase/migrations/20261015_class_scorebook.sql`, `supabase/migrations/20261015_subject_roster_parent_feedback.sql`, and then `supabase/migrations/20261015_terms_mobile_ux.sql`. The subject/feedback migration depends on the `gradebook_assessments` and `gradebook_scores` tables created by the scorebook migration; the term migration renames the columns used by that earlier migration's helper functions, so run it last. These migrations are upgrades for an existing database; review your migration history and back up the database before applying them.
 
 Contact submissions are stored in `public.contact_submissions` with the name, email, subject and message encrypted by the server before insert using `SUPABASE_CONTACT_ENCRYPTION_KEY`, separate from the student birthday key. The table has RLS enabled and grants no direct access to `anon` or `authenticated` roles. The trusted server uses `service_role`; do not put that key in the browser.
 
@@ -154,7 +155,7 @@ The included Privacy Policy and Terms are tailored implementation drafts, not a 
 
 ### Subject dropdown and one-click grade roster
 
-Teachers save a subject once with `create_gradebook_subject`; `gradebook_subjects` is scoped to a section and enforces case-insensitive duplicate prevention after trimming. The scorebook dropdown loads from this saved catalog on later visits. **Add subject to grade roster** invokes `add_subject_to_section_roster`, which adds blank rows to `subject_grades` only when no row for that student/subject already exists. It does not replace any semester grades. A database trigger seeds existing catalog subjects for students who register later.
+Teachers save a subject once with `create_gradebook_subject`; `gradebook_subjects` is scoped to a section and enforces case-insensitive duplicate prevention after trimming. The scorebook dropdown loads from this saved catalog on later visits. **Add subject to grade roster** invokes `add_subject_to_section_roster`, which adds blank rows to `subject_grades` only when no row for that student/subject already exists. It does not replace any term grades. A database trigger seeds existing catalog subjects for students who register later.
 
 Test with a non-production section first: save a new subject, reopen the scorebook and verify the dropdown; click Add subject to grade roster; check the `subject_grades` rows for that section; then enter some existing marks and click the button again to confirm those marks remain unchanged. Register a test student after the subject exists and verify blank rows were initialized automatically.
 
@@ -178,3 +179,16 @@ The registered section's `teacher_sections.teacher_id` is the single source of t
 6. Confirm the teacher dashboard new-feedback count updates on refresh/poll and message status changes from new to in review/resolved.
 7. Confirm the student-facing assessment table includes only recorded scores for the current student and does not turn blank cells into zero.
 8. Ensure `SUPABASE_LRN_HMAC_SECRET`, `SUPABASE_DATA_ENCRYPTION_KEY`, `SUPABASE_CONTACT_ENCRYPTION_KEY`, and Supabase service credentials are stable and server-only.
+
+## Student/parent feedback 503 diagnostics
+
+If `POST /api/students/feedback` returns HTTP 503, see `FEEDBACK_503_TROUBLESHOOTING.md`. The route logs a request ID and a non-sensitive processing stage to the Vercel Function Logs so a missing `SUPABASE_CONTACT_ENCRYPTION_KEY`, unapplied feedback migration, missing rate-limit RPC, or database schema failure can be differentiated without leaking details to the browser.
+
+
+## Three-term grading keys and mobile entry
+
+The production UI and current runtime use only **Term 1**, **Term 2**, and **Term 3**. The current field keys are `subject_grades.term_1`, `subject_grades.term_2`, `subject_grades.term_3`, and `gradebook_assessments.term_number` (valid values 1–3). Historical migration files keep old field names only to make an upgrade possible.
+
+For an existing installation, first back up the database. Ensure the privacy/contact, class scorebook, and subject/parent-feedback migrations are applied in dependency order. Then run `supabase/migrations/20261015_terms_mobile_ux.sql` once. It renames legacy semester grade columns to term columns and converts existing scorebook period-4 assessments to Term 3 without discarding scores. When an assessment name collides with a Term 3 assessment, the former period-4 item is renamed with an “Earlier record” suffix so all saved scores remain attached; review these entries in the scorebook after migration. Do not replay upgrade migrations against a fresh database already created using `supabase/schema.sql`.
+
+Mobile/UI updates include clear “Register as a student” and “Teacher sign in” entry links from the homepage, a student portal choice between registration and grade lookup, a stacked card-based scorebook for narrow screens, larger numeric fields designed for touch, and grade report cards that avoid horizontal scrolling. Verify these flows at 320 px, 375 px, and 768 px viewport widths before launch.

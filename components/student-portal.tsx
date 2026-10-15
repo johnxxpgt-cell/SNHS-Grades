@@ -7,8 +7,8 @@ import { toWebpBlob } from "@/lib/student-images";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 type SchoolSection = { id: string; grade_level: number; section_name: string; academic_year: string; adviserName: string };
-type Subject = { id: string; subject: string; semesters: (number | null)[]; finalGrade: number | null; updatedAt: string };
-type Assessment = { id: string; category: "Quiz" | "Activity" | "Exam" | "Written Works" | "Performance Tasks" | "Summative Test/Exam"; name: string; score: number; maxScore: number; assessedOn: string; updatedAt: string; subject: string | null; gradingPeriod: number | null; source: "legacy" | "scorebook" };
+type Subject = { id: string; subject: string; terms: (number | null)[]; finalGrade: number | null; updatedAt: string };
+type Assessment = { id: string; category: "Quiz" | "Activity" | "Exam" | "Written Works" | "Performance Tasks" | "Summative Test/Exam"; name: string; score: number; maxScore: number; assessedOn: string; updatedAt: string; subject: string | null; termNumber: number | null; source: "legacy" | "scorebook" };
 type LookupResult = {
   student: {
     fullName: string;
@@ -122,7 +122,10 @@ export function StudentPortal() {
         })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Feedback could not be sent.");
+      if (!response.ok) {
+        const reference = typeof payload.requestId === "string" ? ` Reference ID: ${payload.requestId}.` : "";
+        throw new Error(`${payload.error || "Feedback could not be sent."}${reference}`);
+      }
       setFeedbackNotice(payload.message || `Your message was delivered to ${result.student.adviserName}.`);
       setFeedbackGuardianName(""); setFeedbackSubject(""); setFeedbackMessage(""); setFeedbackConsent(false);
     } catch (caught) {
@@ -239,7 +242,7 @@ export function StudentPortal() {
       context.textAlign = "right";
       context.fillStyle = "#cbd4e2";
       context.font = "500 14px Arial, sans-serif";
-      context.fillText("GRADES BY SUBJECT AND SEMESTER", width - padding - 24, 337);
+      context.fillText("GRADES BY SUBJECT AND TERM", width - padding - 24, 337);
       context.textAlign = "left";
 
       const columns = [padding, 570, 700, 830, 960, width - padding];
@@ -249,7 +252,7 @@ export function StudentPortal() {
       context.fillStyle = "#667386";
       context.font = "700 15px Arial, sans-serif";
       context.fillText("SUBJECT", columns[0] + 15, headerY + 39);
-      ["SEMESTER 1", "SEMESTER 2", "SEMESTER 3", "FINAL"].forEach((label, index) => {
+      ["TERM 1", "TERM 2", "TERM 3", "FINAL"].forEach((label, index) => {
         context.textAlign = "center";
         context.fillText(label, (columns[index + 1] + columns[index + 2]) / 2, headerY + 39);
       });
@@ -266,11 +269,11 @@ export function StudentPortal() {
         let subjectName = subject.subject;
         while (subjectName.length > 3 && context.measureText(subjectName).width > columns[1] - columns[0] - 30) subjectName = `${subjectName.slice(0, -4)}…`;
         context.fillText(subjectName, columns[0] + 15, y + 42);
-        subject.semesters.forEach((grade, semesterIndex) => {
+        subject.terms.forEach((grade, termIndex) => {
           context.textAlign = "center";
           context.fillStyle = grade === null ? "#aab2bd" : "#536176";
           context.font = "500 17px Arial, sans-serif";
-          context.fillText(grade === null ? "—" : String(grade), (columns[semesterIndex + 1] + columns[semesterIndex + 2]) / 2, y + 42);
+          context.fillText(grade === null ? "—" : String(grade), (columns[termIndex + 1] + columns[termIndex + 2]) / 2, y + 42);
         });
         context.fillStyle = subject.finalGrade === null ? "#aab2bd" : subject.finalGrade >= 75 ? "#3f7352" : "#8a5148";
         context.font = "700 18px Arial, sans-serif";
@@ -310,9 +313,13 @@ export function StudentPortal() {
               <p>Use your full name, LRN, and private 4-digit PIN to view grades and teacher feedback.</p>
             </div>
             <div className="portal-workspace">
-              <div className="portal-tabs" role="tablist" aria-label="Student options">
-                <button className={mode === "lookup" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={mode === "lookup"} onClick={() => switchMode("lookup")}>View my grades <span>01</span></button>
-                <button className={mode === "register" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={mode === "register"} onClick={() => switchMode("register")}>Register as a student <span>02</span></button>
+              <div className="student-mode-picker" aria-label="Choose a student service">
+                <button className={mode === "lookup" ? "student-mode-choice active" : "student-mode-choice"} type="button" aria-pressed={mode === "lookup"} onClick={() => switchMode("lookup")}>
+                  <span className="student-mode-kicker">ALREADY REGISTERED</span><strong>View my grades</strong><small>Use your name, LRN, and 4-digit PIN.</small><span className="student-mode-arrow" aria-hidden="true">→</span>
+                </button>
+                <button className={mode === "register" ? "student-mode-choice active" : "student-mode-choice"} type="button" aria-pressed={mode === "register"} onClick={() => switchMode("register")}>
+                  <span className="student-mode-kicker">NEW STUDENT?</span><strong>Register here</strong><small>Join a class section opened by your teacher.</small><span className="student-mode-arrow" aria-hidden="true">＋</span>
+                </button>
               </div>
 
               {mode === "lookup" ? (
@@ -333,7 +340,8 @@ export function StudentPortal() {
               ) : (
                 <div className="form-panel">
                   <div className="form-heading"><div><span className="form-overline">NEW STUDENT</span><h2>Join your class</h2></div><span className="round-icon" aria-hidden="true">＋</span></div>
-                  <p className="form-description">Register with your student details. Your grade level is assigned from the class section your teacher has opened.</p>
+                  <p className="form-description">Complete these steps once to join your class. Choose the section your teacher gave you; your grade level and class adviser will be assigned automatically.</p>
+                  <ol className="registration-steps"><li>Enter your school-record details</li><li>Choose your Grade and Section</li><li>Review consent and register</li></ol>
                   <form className="form-stack" onSubmit={handleRegister}>
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="As shown on your school record" /></label>
                     <div className="field-row">
@@ -347,7 +355,7 @@ export function StudentPortal() {
                         {sections.map((section) => <option key={section.id} value={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year} · Adviser: {section.adviserName}</option>)}
                       </select>
                     </label>
-                    {!sectionLoading && !sections.length && <p className="inline-hint">Ask your teacher to open student registration for their class.</p>}
+                    {!sectionLoading && !sections.length && <p className="inline-hint">No sections are open yet. Ask your teacher to add a class section. Teachers can <Link href="/teacher">sign in or register here</Link>, then open their section for students.</p>}
                     <div className="field-row">
                       <label className="field"><span>Gender <small>Optional</small></span><select value={gender} onChange={(event) => setGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label>
                       <label className="field"><span>Profile photo <small>Optional</small></span><span className="photo-control"><input type="file" accept="image/*" onChange={(event) => void handlePhoto(event.target.files?.[0])} /><span className="photo-faux">{avatar ? "Photo ready · WebP" : "Choose a photo"}</span></span></label>
@@ -372,16 +380,16 @@ export function StudentPortal() {
                   <div><h2>{result.student.fullName}</h2><p>Grade {result.student.section.grade_level} · {result.student.section.section_name}<br /><small>Class adviser: {result.student.adviserName}</small></p></div>
                 </div>
                 <div className="result-average"><div><span>OVERALL AVERAGE</span><small>{result.student.section.academic_year}</small></div><strong>{average ?? "—"}<small>{average === null ? "" : "/ 100"}</small></strong></div>
-                <div className="report-download-row"><button className="button button-outline report-download-button" type="button" onClick={() => void downloadGradeReport()} disabled={!result.subjects.length || downloadingReport}>{downloadingReport ? "Preparing image…" : "Download grade report image"}</button><span>Includes semester and final grades only.</span></div>
+                <div className="report-download-row"><button className="button button-outline report-download-button" type="button" onClick={() => void downloadGradeReport()} disabled={!result.subjects.length || downloadingReport}>{downloadingReport ? "Preparing image…" : "Download grade report image"}</button><span>Includes term and final grades only.</span></div>
                 {downloadError && <p className="form-alert error-alert report-download-error" role="alert">{downloadError}</p>}
                 <div className="grades-table-wrap">
-                  <table className="grades-table"><thead><tr><th>Subject</th><th>Semester 1</th><th>Semester 2</th><th>Semester 3</th><th>Final</th></tr></thead>
-                    <tbody>{result.subjects.map((subject) => <tr key={subject.id}><td>{subject.subject}</td>{subject.semesters.map((semester, index) => <td key={index}>{semester ?? <span className="unreported">—</span>}</td>)}<td><span className={subject.finalGrade !== null && subject.finalGrade >= 75 ? "grade-pill pass" : "grade-pill"}>{subject.finalGrade ?? "—"}</span></td></tr>)}</tbody>
+                  <table className="grades-table"><thead><tr><th>Subject</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th>Final</th></tr></thead>
+                    <tbody>{result.subjects.map((subject) => <tr key={subject.id}><td data-label="Subject">{subject.subject}</td>{subject.terms.map((term, index) => <td data-label={`Term ${index + 1}`} key={index}>{term ?? <span className="unreported">—</span>}</td>)}<td data-label="Final"><span className={subject.finalGrade !== null && subject.finalGrade >= 75 ? "grade-pill pass" : "grade-pill"}>{subject.finalGrade ?? "—"}</span></td></tr>)}</tbody>
                   </table>
                   {!result.subjects.length && <div className="empty-report"><span>✳</span><b>No grades posted yet</b><p>Your teacher hasn’t entered grades for this record. Check back later.</p></div>}
                 </div>
                 {result.subjects.length > 0 && <div className="report-legend"><span><i className="legend-pass" /> Passing</span><span><i /> Grade not yet posted</span></div>}
-                {result.assessments.length > 0 && <section className="assessment-report"><div className="assessment-report-heading"><div><span className="form-overline">CLASSWORK & TESTS</span><h3>Assessment scores</h3></div><span>{result.assessments.length} recorded</span></div><div className="assessment-report-table-wrap"><table className="assessment-report-table"><thead><tr><th>SUBJECT</th><th>PERIOD</th><th>TYPE</th><th>ASSESSMENT</th><th>DATE</th><th>SCORE</th><th>RESULT</th></tr></thead><tbody>{result.assessments.map((assessment) => <tr key={assessment.id}><td>{assessment.subject ?? "Other classwork"}</td><td>{assessment.gradingPeriod ? `Quarter ${assessment.gradingPeriod}` : "—"}</td><td><span className={`assessment-kind ${assessment.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{assessment.category}</span></td><td>{assessment.name}</td><td>{new Date(`${assessment.assessedOn}T00:00:00`).toLocaleDateString()}</td><td>{assessment.score} / {assessment.maxScore}</td><td><span className="grade-pill">{Math.round((assessment.score / assessment.maxScore) * 100)}%</span></td></tr>)}</tbody></table></div></section>}
+                {result.assessments.length > 0 && <section className="assessment-report"><div className="assessment-report-heading"><div><span className="form-overline">CLASSWORK & TESTS</span><h3>Assessment scores</h3></div><span>{result.assessments.length} recorded</span></div><div className="assessment-report-table-wrap"><table className="assessment-report-table"><thead><tr><th>SUBJECT</th><th>TERM</th><th>TYPE</th><th>ASSESSMENT</th><th>DATE</th><th>SCORE</th><th>RESULT</th></tr></thead><tbody>{result.assessments.map((assessment) => <tr key={assessment.id}><td data-label="Subject">{assessment.subject ?? "Other classwork"}</td><td data-label="Term">{assessment.termNumber ? `Term ${assessment.termNumber}` : "—"}</td><td data-label="Type"><span className={`assessment-kind ${assessment.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{assessment.category}</span></td><td data-label="Assessment">{assessment.name}</td><td data-label="Date">{new Date(`${assessment.assessedOn}T00:00:00`).toLocaleDateString()}</td><td data-label="Score">{assessment.score} / {assessment.maxScore}</td><td data-label="Result"><span className="grade-pill">{Math.round((assessment.score / assessment.maxScore) * 100)}%</span></td></tr>)}</tbody></table></div></section>}
                 {result.teacherComment && <section className="student-teacher-comment"><div><span className="form-overline">A NOTE FROM YOUR TEACHER</span>{result.commentUpdatedAt && <small>Updated {new Date(result.commentUpdatedAt).toLocaleDateString()}</small>}</div><p>{result.teacherComment}</p></section>}
                 <section className="student-teacher-comment parent-feedback-panel">
                   <div><span className="form-overline">PARENT / GUARDIAN SERVICES</span><h3>Send feedback to the class adviser</h3><p>Your message will be routed to <strong>{result.student.adviserName}</strong>, the teacher responsible for this registered section. Message contents are encrypted while stored.</p></div>
@@ -401,8 +409,8 @@ export function StudentPortal() {
               <div className="student-aside-card">
                 <div className="aside-emblem"><img src="/snhs-logo.webp" alt="Salvacion National High School seal" /></div>
                 <span className="section-kicker">YOUR STUDENT PORTAL</span>
-                <h2>See each subject,<br /><em>one semester at a time.</em></h2>
-                <p>Your report keeps all three semesters together, with the final average clearly marked.</p>
+                <h2>See each subject,<br /><em>one term at a time.</em></h2>
+                <p>Your report keeps all three terms together, with the final average clearly marked.</p>
                 <div className="aside-rule" />
                 <div className="aside-steps"><div><span>01</span><p>Enter your name, LRN, and PIN</p></div><div><span>02</span><p>Review grades and teacher feedback</p></div></div>
                 <div className="aside-bottom"><span className="mini-shield">✓</span> Protected student records</div>
