@@ -94,6 +94,7 @@ export function TeacherPortal() {
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [newParentFeedbackCount, setNewParentFeedbackCount] = useState(0);
 
   useEffect(() => {
     if (!supabase) { setLoadingDashboard(false); return; }
@@ -142,6 +143,32 @@ export function TeacherPortal() {
   }, [supabase]);
 
   useEffect(() => { if (user) void loadDashboard(user.id); else setLoadingDashboard(false); }, [user, loadDashboard]);
+
+  useEffect(() => {
+    const teacherId = user?.id;
+    if (!supabase || !teacherId) { setNewParentFeedbackCount(0); return; }
+    let active = true;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    async function refreshFeedbackCount() {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) { if (active) setNewParentFeedbackCount(0); return; }
+      try {
+        const response = await fetch("/api/parent-feedback?summary=1", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store"
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active) setNewParentFeedbackCount(Number.isFinite(payload.unreadCount) ? Math.max(0, payload.unreadCount) : 0);
+      } catch {
+        // Keep the last count if the network is briefly unavailable.
+      }
+    }
+    void refreshFeedbackCount();
+    timer = setInterval(() => { void refreshFeedbackCount(); }, 60_000);
+    return () => { active = false; if (timer) clearInterval(timer); };
+  }, [supabase, user?.id]);
 
   const loadRoster = useCallback(async (classId: string) => {
     if (!supabase || !classId) { setStudents([]); return; }
@@ -361,7 +388,7 @@ export function TeacherPortal() {
             <div className="dashboard-heading"><div><span className="section-kicker">TEACHER WORKSPACE</span><h1>Welcome back, <em>{profileName.split(" ")[0]}.</em></h1><p>Your class records, ready when you are.</p></div><div className="dashboard-account"><label className="account-photo-control" title="Upload profile photo">{profileAvatar ? <img src={profileAvatar} alt="Teacher profile" loading="lazy" decoding="async" /> : <span className="teacher-avatar">{profileName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<input type="file" accept="image/*" aria-label="Upload teacher profile photo" onChange={(event) => void handleTeacherPhoto(event.target.files?.[0])} /></label><div><b>{profileName}</b><small>{profileGender} · {user.email}</small></div><button className="signout-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></div></div>
             {error && <p className="form-alert error-alert" role="alert">{error}</p>}
             {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
-            <div className="dashboard-toolbar"><div><label htmlFor="teacher-section-select">CLASS SECTION</label><select id="teacher-section-select" value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedStudentId(""); }} disabled={!sections.length}><option value="">{sections.length ? "Choose a section" : "No sections yet"}</option>{sections.map((section) => <option value={section.id} key={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}</select></div><div className="dashboard-toolbar-actions"><button type="button" className="button button-outline" onClick={() => setShowClassScorebook((value) => !value)} disabled={!selectedSectionId}>{showClassScorebook ? "Back to roster" : "Open class scorebook"}</button><button type="button" className="button button-outline" onClick={() => setShowAddSection((value) => !value)}>{showAddSection ? "Close" : "+ Add a section"}</button></div></div>
+            <div className="dashboard-toolbar"><div><label htmlFor="teacher-section-select">CLASS SECTION</label><select id="teacher-section-select" value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedStudentId(""); }} disabled={!sections.length}><option value="">{sections.length ? "Choose a section" : "No sections yet"}</option>{sections.map((section) => <option value={section.id} key={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}</select></div><div className="dashboard-toolbar-actions"><button type="button" className="button button-outline" onClick={() => setShowClassScorebook((value) => !value)} disabled={!selectedSectionId}>{showClassScorebook ? "Back to roster" : "Open class scorebook"}</button><Link href="/teacher/feedback" className="button button-outline feedback-inbox-link">Parent feedback inbox{newParentFeedbackCount > 0 ? <span className="feedback-count-badge">{newParentFeedbackCount} new</span> : null}</Link><button type="button" className="button button-outline" onClick={() => setShowAddSection((value) => !value)}>{showAddSection ? "Close" : "+ Add a section"}</button></div></div>
             {showAddSection && <form className="add-section-panel" onSubmit={handleAddSection}><div><span className="form-overline">NEW CLASS</span><h2>Open another section</h2><p>Students can register as soon as it’s added.</p></div><label className="field"><span>Grade level</span><select value={newGradeLevel} onChange={(event) => setNewGradeLevel(event.target.value)}>{[7, 8, 9, 10, 11, 12].map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="field"><span>Section name</span><input value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} maxLength={40} required placeholder="e.g. Rizal" /></label><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add section"}</button></form>}
             {loadingDashboard ? <div className="dashboard-loading"><span className="spinner" /> Loading your workspace…</div> : sections.length ? (
               <>
@@ -439,7 +466,7 @@ export function TeacherPortal() {
             <aside className="teacher-auth-aside"><div className="aside-emblem"><img src="/snhs-logo.webp" alt="Salvacion National High School seal" /></div><span className="section-kicker">FOR TEACHERS</span><h2>Classroom records,<br /><em>kept together.</em></h2><p>Organize your students in one class roster and enter grades by subject and semester.</p><div className="aside-rule" /><div className="teacher-feature"><span>01</span><p><b>Create your account</b><br />Sign up with your school email.</p></div><div className="teacher-feature"><span>02</span><p><b>Register your class</b><br />Choose your grade and section inside the portal.</p></div><div className="teacher-feature"><span>03</span><p><b>Record each semester</b><br />Save subject marks in a clear grade table.</p></div></aside>
           </div>
         )}
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} SNHS Gradebook</span><span>Salvacion National High School · Busuanga, Palawan</span><nav className="portal-legal-links" aria-label="Footer links"><Link href="/">Home</Link><Link href="/teacher/messages">Contact inbox</Link><Link href="/contact">Contact</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
+        <footer className="portal-footer"><span>© {new Date().getFullYear()} SNHS Gradebook</span><span>Salvacion National High School · Busuanga, Palawan</span><nav className="portal-legal-links" aria-label="Footer links"><Link href="/">Home</Link><Link href="/teacher/messages">Contact inbox</Link><Link href="/teacher/feedback">Parent feedback</Link><Link href="/contact">Contact</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
       </div>
     </main>
   );

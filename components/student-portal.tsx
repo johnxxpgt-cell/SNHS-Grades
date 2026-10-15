@@ -6,16 +6,18 @@ import { PortalHeader } from "@/components/brand";
 import { toWebpBlob } from "@/lib/student-images";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
-type SchoolSection = { id: string; grade_level: number; section_name: string; academic_year: string };
+type SchoolSection = { id: string; grade_level: number; section_name: string; academic_year: string; adviserName: string };
 type Subject = { id: string; subject: string; semesters: (number | null)[]; finalGrade: number | null; updatedAt: string };
-type Assessment = { id: string; category: "Quiz" | "Activity" | "Exam"; name: string; score: number; maxScore: number; assessedOn: string; updatedAt: string };
+type Assessment = { id: string; category: "Quiz" | "Activity" | "Exam" | "Written Works" | "Performance Tasks" | "Summative Test/Exam"; name: string; score: number; maxScore: number; assessedOn: string; updatedAt: string; subject: string | null; gradingPeriod: number | null; source: "legacy" | "scorebook" };
 type LookupResult = {
   student: {
     fullName: string;
     avatar: string | null;
     section: { grade_level: number; section_name: string; academic_year: string };
+    adviserName: string;
   };
   subjects: Subject[];
+  availableSubjects: string[];
   assessments: Assessment[];
   teacherComment: string | null;
   commentUpdatedAt: string | null;
@@ -42,6 +44,13 @@ export function StudentPortal() {
   const [result, setResult] = useState<LookupResult | null>(null);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [feedbackGuardianName, setFeedbackGuardianName] = useState("");
+  const [feedbackSubject, setFeedbackSubject] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackConsent, setFeedbackConsent] = useState(false);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [feedbackNotice, setFeedbackNotice] = useState("");
 
   const loadSections = useCallback(async () => {
     setSectionLoading(true);
@@ -87,11 +96,38 @@ export function StudentPortal() {
       if (!response.ok) throw new Error(payload.error || "We couldn’t retrieve those grades.");
       setResult(payload as LookupResult);
       setPin("");
+      setFeedbackGuardianName(""); setFeedbackSubject(""); setFeedbackMessage(""); setFeedbackConsent(false); setFeedbackError(""); setFeedbackNotice("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "We couldn’t retrieve those grades.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleParentFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!result) return;
+    setFeedbackBusy(true); setFeedbackError(""); setFeedbackNotice("");
+    try {
+      const response = await fetch("/api/students/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          guardianName: feedbackGuardianName,
+          subjectName: feedbackSubject,
+          message: feedbackMessage,
+          privacyConsent: feedbackConsent,
+          privacyNoticeVersion: PRIVACY_NOTICE_VERSION
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Feedback could not be sent.");
+      setFeedbackNotice(payload.message || `Your message was delivered to ${result.student.adviserName}.`);
+      setFeedbackGuardianName(""); setFeedbackSubject(""); setFeedbackMessage(""); setFeedbackConsent(false);
+    } catch (caught) {
+      setFeedbackError(caught instanceof Error ? caught.message : "Feedback could not be sent.");
+    } finally { setFeedbackBusy(false); }
   }
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
@@ -111,7 +147,7 @@ export function StudentPortal() {
       const response = await fetch("/api/students/register", { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Registration could not be completed.");
-      setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}.`);
+      setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}. Class adviser: ${payload.adviserName || "Class adviser not listed"}.`);
       setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName(""); setRegistrationPrivacyConsent(false);
       setMode("lookup");
     } catch (caught) {
@@ -308,7 +344,7 @@ export function StudentPortal() {
                     <label className="field"><span>Class section <small>Grade level is assigned automatically</small></span>
                       <select value={sectionId} onChange={(event) => setSectionId(event.target.value)} required disabled={sectionLoading || !sections.length}>
                         <option value="">{sectionLoading ? "Loading open sections…" : sections.length ? "Choose your section" : "No sections open for registration"}</option>
-                        {sections.map((section) => <option key={section.id} value={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}
+                        {sections.map((section) => <option key={section.id} value={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year} · Adviser: {section.adviserName}</option>)}
                       </select>
                     </label>
                     {!sectionLoading && !sections.length && <p className="inline-hint">Ask your teacher to open student registration for their class.</p>}
@@ -333,7 +369,7 @@ export function StudentPortal() {
                 <div className="result-topline"><span className="result-badge"><i /> VERIFIED RECORD</span><button className="result-close" type="button" aria-label="Close grade report" onClick={() => setResult(null)}>×</button></div>
                 <div className="result-student">
                   {result.student.avatar ? <img className="result-avatar" src={result.student.avatar} alt="" loading="lazy" decoding="async" /> : <div className="result-avatar initials-avatar">{result.student.fullName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div>}
-                  <div><h2>{result.student.fullName}</h2><p>Grade {result.student.section.grade_level} · {result.student.section.section_name}</p></div>
+                  <div><h2>{result.student.fullName}</h2><p>Grade {result.student.section.grade_level} · {result.student.section.section_name}<br /><small>Class adviser: {result.student.adviserName}</small></p></div>
                 </div>
                 <div className="result-average"><div><span>OVERALL AVERAGE</span><small>{result.student.section.academic_year}</small></div><strong>{average ?? "—"}<small>{average === null ? "" : "/ 100"}</small></strong></div>
                 <div className="report-download-row"><button className="button button-outline report-download-button" type="button" onClick={() => void downloadGradeReport()} disabled={!result.subjects.length || downloadingReport}>{downloadingReport ? "Preparing image…" : "Download grade report image"}</button><span>Includes semester and final grades only.</span></div>
@@ -345,9 +381,21 @@ export function StudentPortal() {
                   {!result.subjects.length && <div className="empty-report"><span>✳</span><b>No grades posted yet</b><p>Your teacher hasn’t entered grades for this record. Check back later.</p></div>}
                 </div>
                 {result.subjects.length > 0 && <div className="report-legend"><span><i className="legend-pass" /> Passing</span><span><i /> Grade not yet posted</span></div>}
-                {result.assessments.length > 0 && <section className="assessment-report"><div className="assessment-report-heading"><div><span className="form-overline">CLASSWORK & TESTS</span><h3>Assessment scores</h3></div><span>{result.assessments.length} recorded</span></div><div className="assessment-report-table-wrap"><table className="assessment-report-table"><thead><tr><th>TYPE</th><th>ASSESSMENT</th><th>DATE</th><th>SCORE</th><th>RESULT</th></tr></thead><tbody>{result.assessments.map((assessment) => <tr key={assessment.id}><td><span className={`assessment-kind ${assessment.category.toLowerCase()}`}>{assessment.category}</span></td><td>{assessment.name}</td><td>{new Date(`${assessment.assessedOn}T00:00:00`).toLocaleDateString()}</td><td>{assessment.score} / {assessment.maxScore}</td><td><span className="grade-pill">{Math.round((assessment.score / assessment.maxScore) * 100)}%</span></td></tr>)}</tbody></table></div></section>}
+                {result.assessments.length > 0 && <section className="assessment-report"><div className="assessment-report-heading"><div><span className="form-overline">CLASSWORK & TESTS</span><h3>Assessment scores</h3></div><span>{result.assessments.length} recorded</span></div><div className="assessment-report-table-wrap"><table className="assessment-report-table"><thead><tr><th>SUBJECT</th><th>PERIOD</th><th>TYPE</th><th>ASSESSMENT</th><th>DATE</th><th>SCORE</th><th>RESULT</th></tr></thead><tbody>{result.assessments.map((assessment) => <tr key={assessment.id}><td>{assessment.subject ?? "Other classwork"}</td><td>{assessment.gradingPeriod ? `Quarter ${assessment.gradingPeriod}` : "—"}</td><td><span className={`assessment-kind ${assessment.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{assessment.category}</span></td><td>{assessment.name}</td><td>{new Date(`${assessment.assessedOn}T00:00:00`).toLocaleDateString()}</td><td>{assessment.score} / {assessment.maxScore}</td><td><span className="grade-pill">{Math.round((assessment.score / assessment.maxScore) * 100)}%</span></td></tr>)}</tbody></table></div></section>}
                 {result.teacherComment && <section className="student-teacher-comment"><div><span className="form-overline">A NOTE FROM YOUR TEACHER</span>{result.commentUpdatedAt && <small>Updated {new Date(result.commentUpdatedAt).toLocaleDateString()}</small>}</div><p>{result.teacherComment}</p></section>}
-                <p className="report-footnote">For questions about a grade, please contact your subject teacher.</p>
+                <section className="student-teacher-comment parent-feedback-panel">
+                  <div><span className="form-overline">PARENT / GUARDIAN SERVICES</span><h3>Send feedback to the class adviser</h3><p>Your message will be routed to <strong>{result.student.adviserName}</strong>, the teacher responsible for this registered section. Message contents are encrypted while stored.</p></div>
+                  <form className="form-stack parent-feedback-fields" onSubmit={handleParentFeedback}>
+                    <label className="field"><span>Parent or guardian name</span><input value={feedbackGuardianName} onChange={(event) => setFeedbackGuardianName(event.target.value)} required minLength={2} maxLength={100} autoComplete="name" placeholder="Enter your name" /></label>
+                    <label className="field"><span>Subject (optional)</span><select value={feedbackSubject} onChange={(event) => setFeedbackSubject(event.target.value)}><option value="">General grade feedback</option>{result.availableSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+                    <label className="field"><span>Message for the class adviser</span><textarea value={feedbackMessage} onChange={(event) => setFeedbackMessage(event.target.value.slice(0, 2000))} required minLength={10} maxLength={2000} rows={4} placeholder="Ask a question or share feedback about the student's grades or progress…" /></label>
+                    <label className="consent-row"><input type="checkbox" checked={feedbackConsent} onChange={(event) => setFeedbackConsent(event.target.checked)} required /><span>I consent to this message and my name being processed and shared with the student's assigned class adviser for school-related follow-up. See the <Link href="/privacy" target="_blank">Privacy Policy</Link>.</span></label>
+                    {feedbackError && <p className="form-alert error-alert" role="alert">{feedbackError}</p>}
+                    {feedbackNotice && <p className="form-alert success-alert" role="status">{feedbackNotice}</p>}
+                    <button className="button button-primary form-submit" type="submit" disabled={feedbackBusy || !feedbackConsent}>{feedbackBusy ? "Sending securely…" : "Send feedback to adviser"}</button>
+                  </form>
+                </section>
+                <p className="report-footnote">For questions about a grade, contact the assigned class adviser. Feedback can be sent from this verified grade report for 15 minutes after lookup.</p>
               </section>
             ) : (
               <div className="student-aside-card">

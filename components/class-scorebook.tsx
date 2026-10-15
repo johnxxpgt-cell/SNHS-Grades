@@ -21,6 +21,7 @@ type GradebookScore = {
   student_id: string;
   score: number | string | null;
 };
+type GradebookSubject = { id: string; subject_name: string; created_at?: string };
 type ClassStudent = { id: string; full_name: string };
 type WeightProfile = "mathScience" | "languageSocial" | "performanceHeavy";
 type Weights = Record<ScoreCategory, number>;
@@ -90,9 +91,9 @@ export function ClassScorebook({
   userId: string;
 }) {
   const supabase = getSupabaseBrowserClient();
-  const [subjectInput, setSubjectInput] = useState("Science");
-  const [activeSubject, setActiveSubject] = useState("Science");
-  const [periodInput, setPeriodInput] = useState("1");
+  const [subjects, setSubjects] = useState<GradebookSubject[]>([]);
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [activeSubject, setActiveSubject] = useState("");
   const [activePeriod, setActivePeriod] = useState(1);
   const [weightProfile, setWeightProfile] = useState<WeightProfile>("mathScience");
   const [assessments, setAssessments] = useState<GradebookAssessment[]>([]);
@@ -116,6 +117,30 @@ export function ClassScorebook({
     return categoryDelta || left.assessed_on.localeCompare(right.assessed_on) || left.created_at.localeCompare(right.created_at);
   }), [assessments]);
   const visibleStudents = useMemo(() => students.filter((student) => student.full_name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [students, search]);
+
+  const loadSubjects = useCallback(async () => {
+    if (!supabase || !sectionId) { setSubjects([]); setActiveSubject(""); return; }
+    const { data, error: subjectError } = await supabase
+      .from("gradebook_subjects")
+      .select("id, subject_name, created_at")
+      .eq("section_id", sectionId)
+      .order("subject_name", { ascending: true });
+    if (subjectError) {
+      console.error("[class-scorebook] Subject catalogue query failed:", subjectError);
+      setError("The subject list could not load. Apply the subject-roster migration, then reload the scorebook.");
+      setSubjects([]);
+      setActiveSubject("");
+      return;
+    }
+    const listed = (data ?? []) as GradebookSubject[];
+    setSubjects(listed);
+    setActiveSubject((current) => {
+      const match = listed.find((subject) => subject.subject_name.toLocaleLowerCase() === current.trim().toLocaleLowerCase());
+      return match?.subject_name ?? listed[0]?.subject_name ?? "";
+    });
+  }, [supabase, sectionId]);
+
+  useEffect(() => { void loadSubjects(); }, [loadSubjects]);
 
   const loadScorebook = useCallback(async () => {
     if (!supabase || !sectionId || !activeSubject.trim()) {
@@ -178,6 +203,61 @@ export function ClassScorebook({
   useEffect(() => { void loadScorebook(); }, [loadScorebook]);
   useEffect(() => { setWeightProfile(recommendedProfile(activeSubject)); }, [activeSubject]);
 
+  async function handleCreateSubject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) { setError("Supabase is not configured."); return; }
+    const cleanName = newSubjectName.trim().replace(/\s+/g, " ");
+    if (cleanName.length < 2 || cleanName.length > 80) { setError("Enter a subject name between 2 and 80 characters."); return; }
+    setSaving(true); setError(""); setNotice("");
+    const { data, error: createError } = await supabase.rpc("create_gradebook_subject", {
+      p_section_id: sectionId,
+      p_subject_name: cleanName
+    });
+    if (createError) {
+      console.error("[class-scorebook] Subject create failed:", createError);
+      setError("The subject could not be saved. Verify the subject-roster migration and your section access.");
+      setSaving(false);
+      return;
+    }
+    const returned = (Array.isArray(data) ? data[0] : data) as GradebookSubject | null;
+    if (!returned?.subject_name) {
+      setError("The subject was not returned after saving. Refresh the scorebook and try again.");
+      setSaving(false);
+      return;
+    }
+    setSubjects((current) => {
+      const exists = current.some((subject) => subject.subject_name.toLocaleLowerCase() === returned.subject_name.toLocaleLowerCase());
+      return exists ? current : [...current, returned].sort((a, b) => a.subject_name.localeCompare(b.subject_name));
+    });
+    setActiveSubject(returned.subject_name);
+    setNewSubjectName("");
+    setNotice(`“${returned.subject_name}” is saved for this section and will appear in the subject dropdown next time.`);
+    setSaving(false);
+  }
+
+  async function handleAddSubjectToRoster() {
+    if (!supabase || !activeSubject || !subjects.some((subject) => subject.subject_name === activeSubject)) {
+      setError("Choose a saved subject before adding it to the roster.");
+      return;
+    }
+    if (!students.length) { setNotice("No registered students are in this section yet. Students will be included when they register."); return; }
+    setSaving(true); setError(""); setNotice("");
+    const { data, error: rosterError } = await supabase.rpc("add_subject_to_section_roster", {
+      p_section_id: sectionId,
+      p_subject_name: activeSubject
+    });
+    if (rosterError) {
+      console.error("[class-scorebook] Subject roster action failed:", rosterError);
+      setError("The subject could not be added to the grade roster. Check the subject-roster migration and section access.");
+    } else {
+      const count = Number(data ?? 0);
+      setNotice(count > 0
+        ? `“${activeSubject}” was added to ${count} student grade record${count === 1 ? "" : "s"}. Existing marks were preserved.`
+        : `“${activeSubject}” is already on every student's grade record. Existing marks were preserved.`);
+    }
+    setSaving(false);
+  }
+
   async function handleAddAssessment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) { setError("Supabase is not configured."); return; }
@@ -186,8 +266,7 @@ export function ClassScorebook({
     const max = Number(maxScore);
     if (cleanName.length < 2 || cleanName.length > 100) { setError("Enter an assessment name between 2 and 100 characters."); return; }
     if (!Number.isFinite(max) || max <= 0 || max > 100000) { setError("Maximum score must be greater than 0 and no more than 100,000."); return; }
-    if (!activeSubject.trim() || activeSubject.trim().length < 2 || activeSubject.trim().length > 80) { setError("Enter a subject name between 2 and 80 characters, then load it."); return; }
-    if (subjectInput.trim().replace(/\s+/g, " ") !== activeSubject || Number(periodInput) !== activePeriod) { setError("Click ‘Load subject & quarter’ before adding an assessment so it is saved to the selected subject and quarter."); return; }
+    if (!activeSubject.trim() || !subjects.some((subject) => subject.subject_name === activeSubject)) { setError("Create or choose a saved subject before adding an assessment."); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate) || Number.isNaN(new Date(`${assessmentDate}T00:00:00`).getTime())) { setError("Choose a valid assessment date."); return; }
 
     setSaving(true);
@@ -297,10 +376,16 @@ export function ClassScorebook({
         <div className="scorebook-class-average"><span>COMPLETED INITIAL GRADES</span><strong>{classAverage === null ? "—" : classAverage.toFixed(2)}</strong><small>{computedGrades.filter((grade) => grade.value !== null).length} of {students.length} students complete</small></div>
       </div>
 
-      <div className="scorebook-controls">
-        <label className="field"><span>Subject</span><input value={subjectInput} onChange={(event) => setSubjectInput(event.target.value)} maxLength={80} placeholder="e.g. Science" /></label>
-        <label className="field"><span>Grading period</span><select value={periodInput} onChange={(event) => setPeriodInput(event.target.value)}>{[1, 2, 3, 4].map((period) => <option value={period} key={period}>Quarter {period}</option>)}</select></label>
-        <button className="button button-outline" type="button" onClick={() => { const clean = subjectInput.trim().replace(/\s+/g, " "); if (clean.length < 2) { setError("Enter a valid subject name."); return; } setActiveSubject(clean); setActivePeriod(Number(periodInput)); setError(""); setNotice(""); }} disabled={saving}>Load subject & quarter</button>
+      <div className="scorebook-subject-manager">
+        <div className="scorebook-controls">
+          <label className="field"><span>Saved subject</span><select value={activeSubject} onChange={(event) => { setActiveSubject(event.target.value); setError(""); setNotice(""); }} disabled={!subjects.length || saving}><option value="">{subjects.length ? "Choose a subject" : "Create your first subject"}</option>{subjects.map((subject) => <option value={subject.subject_name} key={subject.id}>{subject.subject_name}</option>)}</select></label>
+          <label className="field"><span>Grading period</span><select value={activePeriod} onChange={(event) => { setActivePeriod(Number(event.target.value)); setError(""); setNotice(""); }}>{[1, 2, 3, 4].map((period) => <option value={period} key={period}>Quarter {period}</option>)}</select></label>
+          <button className="button button-outline" type="button" onClick={() => void handleAddSubjectToRoster()} disabled={saving || !activeSubject}>{saving ? "Working…" : "+ Add subject to grade roster"}</button>
+        </div>
+        <form className="scorebook-create-subject" onSubmit={handleCreateSubject}>
+          <label className="field"><span>Create a subject for this section</span><input value={newSubjectName} onChange={(event) => setNewSubjectName(event.target.value)} maxLength={80} minLength={2} placeholder="Type a subject once, e.g. Science" required /></label>
+          <button className="button button-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "+ Save subject"}</button>
+        </form>
       </div>
 
       <div className="scorebook-weight-row">
@@ -309,13 +394,13 @@ export function ClassScorebook({
       </div>
 
       <form className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
-        <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject} · Quarter {activePeriod}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
+        <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject || "Choose a subject"} · Quarter {activePeriod}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
         <div className="scorebook-add-grid">
           <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item}>{item}</option>)}</select></label>
           <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} minLength={2} maxLength={100} required placeholder="e.g. Written Work 1" /></label>
           <label className="field"><span>Highest possible score</span><input type="number" min="0.01" max="100000" step="0.01" value={maxScore} onChange={(event) => setMaxScore(event.target.value)} required /></label>
           <label className="field"><span>Date</span><input type="date" value={assessmentDate} onChange={(event) => setAssessmentDate(event.target.value)} required /></label>
-          <button type="submit" className="button button-primary" disabled={saving || !activeSubject.trim()}>{saving ? "Saving…" : "+ Add assessment"}</button>
+          <button type="submit" className="button button-primary" disabled={saving || !activeSubject.trim() || !subjects.some((subject) => subject.subject_name === activeSubject)}>{saving ? "Saving…" : "+ Add assessment"}</button>
         </div>
       </form>
 
@@ -330,7 +415,7 @@ export function ClassScorebook({
       </div>
 
       <div className="scorebook-table-wrap">
-        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>No assessments for {activeSubject}, Quarter {activePeriod} yet.</strong><p>Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook.</p></div> : (
+        {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>{activeSubject ? `No assessments for ${activeSubject}, Quarter ${activePeriod} yet.` : "Create or choose a saved subject first."}</strong><p>{activeSubject ? "Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook." : "Save a subject above. It will remain in the dropdown whenever you reopen this scorebook for this section."}</p></div> : (
           <table className="scorebook-table">
             <thead><tr><th className="scorebook-student-col">Student</th>{sortedAssessments.map((assessment) => <th key={assessment.id}><div className="scorebook-assessment-heading"><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Max: {Number(assessment.max_score)}</small><button type="button" onClick={() => void handleDeleteAssessment(assessment)} aria-label={`Delete ${assessment.assessment_name}`} disabled={saving}>Delete column</button></div></th>)}<th className="scorebook-grade-col">Initial<br />weighted score</th></tr></thead>
             <tbody>

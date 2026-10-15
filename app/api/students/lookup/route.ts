@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
+import { allowRequest, createStudentFeedbackTicket, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
     const { data: student, error } = await admin
       .from("students")
-      .select("id, full_name, avatar_path, avatar_webp_data_url, pin_digest, section:teacher_sections(grade_level, section_name, academic_year)")
+      .select("id, full_name, avatar_path, avatar_webp_data_url, pin_digest, section_id, section:teacher_sections(teacher_id, grade_level, section_name, academic_year)")
       .eq("access_digest", accessDigest)
       .maybeSingle();
     if (error) throw error;
@@ -80,7 +80,16 @@ export async function POST(request: Request) {
       }
     }
 
-    const [gradeResult, assessmentResult, commentResult] = await Promise.all([
+    const joinedSection = Array.isArray(student.section) ? student.section[0] : student.section;
+    if (!joinedSection?.teacher_id) return jsonError("This student record has no assigned class adviser. Please contact the school office.", 409);
+    const { data: adviserProfile, error: adviserError } = await admin
+      .from("teacher_profiles")
+      .select("full_name")
+      .eq("id", joinedSection.teacher_id)
+      .maybeSingle();
+    if (adviserError) throw adviserError;
+
+    const [gradeResult, assessmentResult, scorebookAssessmentResult, catalogueResult, commentResult] = await Promise.all([
       admin.from("subject_grades")
         .select("id, subject_name, semester_1, semester_2, semester_3, updated_at")
         .eq("student_id", student.id)
@@ -90,6 +99,15 @@ export async function POST(request: Request) {
         .eq("student_id", student.id)
         .order("assessed_on", { ascending: false })
         .order("updated_at", { ascending: false }),
+      admin.from("gradebook_assessments")
+        .select("id, subject_name, grading_period, category, assessment_name, max_score, assessed_on, created_at")
+        .eq("section_id", student.section_id)
+        .order("grading_period", { ascending: true })
+        .order("assessed_on", { ascending: false }),
+      admin.from("gradebook_subjects")
+        .select("subject_name")
+        .eq("section_id", student.section_id)
+        .order("subject_name", { ascending: true }),
       admin.from("student_teacher_comments")
         .select("comment, updated_at")
         .eq("student_id", student.id)
@@ -97,7 +115,19 @@ export async function POST(request: Request) {
     ]);
     if (gradeResult.error) throw gradeResult.error;
     if (assessmentResult.error) throw assessmentResult.error;
+    if (scorebookAssessmentResult.error) throw scorebookAssessmentResult.error;
+    if (catalogueResult.error) throw catalogueResult.error;
     if (commentResult.error) throw commentResult.error;
+
+    const scorebookAssessmentIds = (scorebookAssessmentResult.data ?? []).map((assessment) => assessment.id);
+    const { data: scorebookScores, error: scorebookScoreError } = scorebookAssessmentIds.length
+      ? await admin.from("gradebook_scores")
+          .select("assessment_id, score, updated_at")
+          .eq("student_id", student.id)
+          .in("assessment_id", scorebookAssessmentIds)
+          .not("score", "is", null)
+      : { data: [], error: null };
+    if (scorebookScoreError) throw scorebookScoreError;
     const grades = gradeResult.data;
     const subjects = (grades ?? []).map((grade) => {
       const semesters = [grade.semester_1, grade.semester_2, grade.semester_3]
@@ -111,32 +141,65 @@ export async function POST(request: Request) {
         updatedAt: grade.updated_at
       };
     });
-    const assessments = (assessmentResult.data ?? []).map((assessment) => ({
-      id: assessment.id,
-      category: assessment.category,
+    const legacyAssessments = (assessmentResult.data ?? []).map((assessment) => ({
+      id: `legacy-${assessment.id}`,
+      category: assessment.category as "Quiz" | "Activity" | "Exam",
       name: assessment.assessment_name,
       score: Number(assessment.score),
       maxScore: Number(assessment.max_score),
       assessedOn: assessment.assessed_on,
-      updatedAt: assessment.updated_at
+      updatedAt: assessment.updated_at,
+      subject: null as string | null,
+      gradingPeriod: null as number | null,
+      source: "legacy" as const
     }));
+    const scoreByAssessment = new Map((scorebookScores ?? []).map((score) => [score.assessment_id, score]));
+    const classScorebookAssessments = (scorebookAssessmentResult.data ?? []).flatMap((assessment) => {
+      const score = scoreByAssessment.get(assessment.id);
+      // Unentered score cells are intentionally not exposed as zero; only actual teacher-entered scores appear.
+      if (!score || score.score === null) return [];
+      return [{
+        id: `scorebook-${assessment.id}`,
+        category: assessment.category as "Written Works" | "Performance Tasks" | "Summative Test/Exam",
+        name: assessment.assessment_name,
+        score: Number(score.score),
+        maxScore: Number(assessment.max_score),
+        assessedOn: assessment.assessed_on,
+        updatedAt: score.updated_at ?? assessment.created_at,
+        subject: assessment.subject_name,
+        gradingPeriod: Number(assessment.grading_period),
+        source: "scorebook" as const
+      }];
+    });
+    const assessments = [...legacyAssessments, ...classScorebookAssessments]
+      .sort((left, right) => right.assessedOn.localeCompare(left.assessedOn) || right.updatedAt.localeCompare(left.updatedAt));
     let avatar = student.avatar_webp_data_url;
     if (student.avatar_path) {
       const { data: signedPhoto, error: signedPhotoError } = await admin.storage.from("profile-photos").createSignedUrl(student.avatar_path, 3600);
       if (signedPhotoError) throw signedPhotoError;
       avatar = signedPhoto.signedUrl;
     }
-    return Response.json({
+    const response = Response.json({
       student: {
         fullName: student.full_name,
         avatar,
-        section: student.section
+        section: {
+          grade_level: joinedSection.grade_level,
+          section_name: joinedSection.section_name,
+          academic_year: joinedSection.academic_year
+        },
+        adviserName: adviserProfile?.full_name?.trim() || "Class adviser not listed"
       },
       subjects,
+      availableSubjects: (catalogueResult.data ?? []).map((row) => row.subject_name),
       assessments,
       teacherComment: commentResult.data?.comment ?? null,
       commentUpdatedAt: commentResult.data?.updated_at ?? null
     }, { headers: { "Cache-Control": "no-store, private" } });
+    const ticket = createStudentFeedbackTicket(student.id);
+    const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    response.headers.append("Set-Cookie", `snhs_feedback_ticket=${ticket}; Path=/api/students/feedback; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);
+    return response;
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("The grade lookup could not be read.");
     return jsonError("Grade lookup is temporarily unavailable. Please try again shortly.", 503);

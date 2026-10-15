@@ -1062,3 +1062,27 @@ body { font-size: 16px; line-height: 1.55; }
   .scorebook-summary-row { gap: 9px 12px; }
   .scorebook-save { width: 100%; margin-left: 0; }
 }
+
+/* Persistent subjects, roster seeding, and parent/guardian feedback */
+
+.scorebook-subject-manager { display: grid; gap: 10px; }
+.scorebook-subject-manager .scorebook-controls { grid-template-columns: minmax(180px, 1.1fr) minmax(140px, .7fr) auto; }
+.scorebook-create-subject { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 12px; padding: 13px 15px; border: 1px solid #e6eaec; border-top: 0; background: #fcfdfd; }
+.scorebook-create-subject .button { min-height: 43px; white-space: nowrap; }
+.parent-feedback-panel { display: grid; gap: 16px; }
+.parent-feedback-panel h3 { margin: 7px 0; color: var(--navy); font-family: var(--serif); font-size: 22px; font-weight: 400; }
+.parent-feedback-panel > div > p { margin: 6px 0 0; color: #6f7b87; font-size: 12px; line-height: 1.65; }
+.parent-feedback-fields { gap: 13px; }
+.parent-feedback-fields textarea { width: 100%; min-height: 100px; resize: vertical; }
+.parent-feedback-fields .consent-row { align-items: flex-start; }
+.parent-feedback-fields .form-submit { width: 100%; }
+
+@media (max-width: 760px) {
+  .scorebook-subject-manager .scorebook-controls { grid-template-columns: 1fr; }
+  .scorebook-create-subject { grid-template-columns: 1fr; }
+  .scorebook-create-subject .button { width: 100%; }
+}
+
+
+.feedback-inbox-link { display: inline-flex; align-items: center; gap: 9px; }
+.feedback-count-badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 3px 7px; background: #e9f0e9; color: #365f45; font-size: 11px; font-weight: 700; line-height: 1.2; white-space: nowrap; }

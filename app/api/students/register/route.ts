@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     const { data: section, error: sectionError } = await admin
       .from("teacher_sections")
-      .select("id, grade_level, section_name, academic_year")
+      .select("id, teacher_id, grade_level, section_name, academic_year")
       .eq("id", sectionId)
       .eq("is_active", true)
       .eq("academic_year", getCurrentAcademicYear())
@@ -86,10 +86,18 @@ export async function POST(request: Request) {
       throw error;
     }
 
+    const { data: adviserProfile, error: adviserError } = await admin
+      .from("teacher_profiles")
+      .select("full_name")
+      .eq("id", section.teacher_id)
+      .maybeSingle();
+    if (adviserError) throw adviserError;
+
     return Response.json({
       message: "Registration received. Use your full name, LRN, and 4-digit PIN to view your grades.",
       gradeLevel: section.grade_level,
-      sectionName: section.section_name
+      sectionName: section.section_name,
+      adviserName: adviserProfile?.full_name?.trim() || "Class adviser not listed"
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[students/register] Registration request failed:", error instanceof Error ? error.message : "Unknown error");

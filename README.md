@@ -12,7 +12,7 @@ A responsive grade portal for Salvacion National High School. Students register 
 ## Local setup
 
 1. Create a Supabase project.
-2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply the project's original migrations as described in your installed schema state and also run [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql) and [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql).
+2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply pending original migrations first, then [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql), [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql), and finally [`supabase/migrations/20261015_subject_roster_parent_feedback.sql`](supabase/migrations/20261015_subject_roster_parent_feedback.sql). Check which migrations have already been run before applying them.
 3. Copy [`.env.example`](.env.example) to `.env.local` and configure Supabase URL, browser publishable key, server secret key, stable HMAC, birthday-encryption and contact-encryption keys, canonical URL and the official school privacy contact. Optional Google integrations stay disabled until their values are set.
 4. Install and start the app with `npm ci` and `npm run dev`.
 5. In Supabase Auth, enable email confirmation for teacher accounts and allow the deployed `/auth/callback` URL. In Vercel, explicitly set `NEXT_PUBLIC_APP_URL` to the real canonical production origin and redeploy.
@@ -25,13 +25,16 @@ Never put the Supabase server secret, HMAC secret, or AES key in a `NEXT_PUBLIC_
 - `/student` — student grade lookup and class registration (noindex).
 - `/teacher` — teacher sign-in and classroom workspace, including the class-wide scorebook under **Open class scorebook** (noindex).
 - `/teacher/messages` — encrypted contact inbox for explicitly allowlisted, authenticated school accounts (noindex).
+- `/teacher/feedback` — encrypted parent/guardian feedback assigned to the registered class adviser (noindex).
 - `/contact` — public contact form.
 - `/privacy` — Privacy Policy draft for school review.
 - `/terms` — Terms of Service draft for school review.
 - `/auth/callback` — teacher email confirmation callback (noindex).
 - `/api/sections` — active class sections only.
 - `/api/students/register` — server-side student registration.
-- `/api/students/lookup` — server-side grade lookup.
+- `/api/students/lookup` — server-side grade lookup, class-adviser attribution, and a short-lived feedback ticket.
+- `/api/students/feedback` — privacy-consented parent/guardian feedback routed to the section owner.
+- `/api/parent-feedback` — authenticated teacher inbox API, including new-message count and status workflow.
 - `/api/contact` — contact submit API and protected inbox GET/PATCH API.
 
 ## SEO and privacy
@@ -48,7 +51,11 @@ The Privacy Policy and Terms are drafts that need approval from the responsible 
 
 The teacher dashboard now includes an Excel-style whole-class assessment table. Teachers select a section, subject, and quarter; add Written Works, Performance Tasks, and Summative Test/Exam columns; enter scores for each student; and save changed cells. Empty cells are missing scores, while `0` is a real score. Row-level security restricts records by teacher-owned class section, and a database trigger enforces student/section matching and score maximums.
 
-Before use, existing Supabase installations must apply `supabase/migrations/20261015_class_scorebook.sql`. The page can calculate a weighted initial score from one of the suggested weight profiles, but the school must confirm the exact subject weights and add/validate its official transmutation table before treating that value as the final quarterly grade. This feature does not yet publish these new scorebook scores to the existing student-facing grade report. See [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
+Before use, existing Supabase installations must apply `supabase/migrations/20261015_class_scorebook.sql` and then `supabase/migrations/20261015_subject_roster_parent_feedback.sql`. Teachers can save subjects to a section-specific catalog and choose them from a dropdown on later visits. The **Add subject to grade roster** action adds blank three-semester rows for existing students without overwriting existing marks; an insert trigger seeds already-saved subjects for students registered later. Entered scorebook assessment scores are also included in the private student/parent report. The page can calculate a weighted initial score from one of the suggested weight profiles, but the school must confirm the exact subject weights and official transmutation table before treating that value as the final quarterly grade. See [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
+
+## Parent/guardian feedback and class adviser
+
+A verified private grade lookup enables a privacy-consented feedback form. Feedback message content and guardian name are encrypted before storage in `student_parent_feedback`, and the responsible teacher is taken from the student's registered `teacher_sections.teacher_id` rather than supplied by the sender. That teacher can review and update messages at `/teacher/feedback`; the dashboard shows the count of new messages and refreshes it every minute while open. Student registration and grade lookup display the assigned adviser name from the same section owner. This release routes feedback into the dashboard inbox; it does not send email notifications.
 ## Latest build fix
 
 The Open Graph image prerender error caused by a headline `div` containing `<br />` without an explicit display layout has been corrected in `app/opengraph-image.tsx`. See `BUILD_FIX_NOTES.md` for the cause and verification status.

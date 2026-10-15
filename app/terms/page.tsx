@@ -27,15 +27,17 @@ export default function TermsPage() {
           <p>Provide accurate details and use the account and credentials assigned to you. Keep passwords and student PINs private, sign out of shared devices, and report suspected unauthorized access to the school. The school may limit access, investigate abuse or correct records according to its policies and applicable law.</p>
           <h2>3. School records</h2>
           <p>The portal displays records entered by authorized teachers. If a grade appears incorrect or incomplete, contact the relevant teacher or school administration for review. A portal display or downloadable report image does not replace an official school document where a signed or formally issued record is required.</p>
-          <h2>4. Prohibited activities</h2>
-          <p>You must not try to access another person's record, guess credentials, bypass access controls, scrape or redistribute school records, upload malicious content, disrupt service, or use the site unlawfully. The contact form must not be used to submit passwords, PINs, LRNs, or unrelated sensitive information.</p>
-          <h2>5. Availability and changes</h2>
+          <h2>4. Parent/guardian feedback</h2>
+          <p>A parent or guardian may submit school-related grade feedback from a verified student grade report. The message is routed to the teacher responsible for the student's registered section and is visible in that teacher's in-app feedback inbox. Send only information relevant to the student's school progress; do not include passwords, student PINs, LRNs, unrelated medical/financial details, or other unnecessary sensitive information. Feedback is subject to the school's approved retention schedule. This release does not send feedback messages by email.</p>
+          <h2>5. Prohibited activities</h2>
+          <p>You must not try to access another person's record, guess credentials, bypass access controls, scrape or redistribute school records, upload malicious content, disrupt service, submit abusive or unlawful content, or use the site unlawfully. The general contact form must not be used to submit passwords, PINs, LRNs, or unrelated sensitive information.</p>
+          <h2>6. Availability and changes</h2>
           <p>The service may be updated, temporarily unavailable, or changed for security, maintenance or school needs. Reasonable care is taken to protect the information processed, but no website can guarantee uninterrupted availability or absolute security.</p>
-          <h2>6. Privacy</h2>
+          <h2>7. Privacy</h2>
           <p>Use of the portal is subject to the <Link href="/privacy">Privacy Policy</Link>. The school should provide appropriate notices and obtain any consent or authorization required for processing, especially for records concerning minors.</p>
-          <h2>7. Responsibility and applicable law</h2>
+          <h2>8. Responsibility and applicable law</h2>
           <p>Nothing in these terms excludes rights or liabilities that cannot legally be excluded. The service is intended for use in the Philippines and is governed by applicable Philippine law. Any dispute should first be raised with the school administration, without limiting any statutory remedy.</p>
-          <h2>8. Contact</h2>
+          <h2>9. Contact</h2>
           <p>For questions about the portal, use the <Link href="/contact">contact form</Link>. {privacyEmail ? <>Privacy matters can be directed to <a href={`mailto:${privacyEmail}`}>{privacyEmail}</a>.</> : <>The school must publish its official, monitored privacy contact before the portal is launched in production.</>}</p>
         </article>
         <PublicFooter />

@@ -5,6 +5,10 @@
 ```text
 app/
   api/contact/route.ts             # Public POST; protected GET/PATCH inbox API
+  api/parent-feedback/route.ts     # Assigned-teacher inbox/count/status API
+  api/sections/route.ts            # Active registration sections with derived adviser names
+  api/students/feedback/route.ts   # Encrypted guardian feedback POST
+  api/students/lookup/route.ts    # Private grade lookup + feedback ticket
   auth/callback/layout.tsx         # No-index metadata for auth callback
   contact/page.tsx                 # Contact page and metadata
   not-found.tsx                    # Custom 404
@@ -15,10 +19,11 @@ app/
   student/page.tsx                 # Improved metadata, noindex
   teacher/page.tsx                 # Improved metadata, noindex
   teacher/messages/page.tsx        # Restricted contact inbox view, noindex
-components/
-  class-scorebook.tsx              # Whole-class assessment grid, missing-score flags, weighted initial score
+  teacher/feedback/page.tsx        # Assigned parent/guardian feedback inbox, noindex
   terms/page.tsx                   # Terms of Service draft
 components/
+  class-scorebook.tsx              # Whole-class assessment grid, saved subjects, roster seeding
+  parent-feedback-inbox.tsx        # Teacher inbox for encrypted parent feedback
   analytics-consent.tsx            # GA4 opt-in; manual public-page views only
   breadcrumbs.tsx                  # Accessible reusable breadcrumbs
   contact-form.tsx                 # Validated contact submission UI
@@ -27,9 +32,10 @@ lib/
   constants.ts                     # Shared privacy-notice version
   server/security.ts               # AES-256-GCM generic field encrypt/decrypt helpers
 supabase/
-  schema.sql                       # Includes contact table and consent fields for fresh setup
+  schema.sql                       # Fresh-install schema, including scorebook/subject/feedback features
   migrations/20261015_privacy_contact.sql
   migrations/20261015_class_scorebook.sql # Class-wide assessment definitions and per-student scores with RLS
+  migrations/20261015_subject_roster_parent_feedback.sql # Subject catalogue, safe roster seeding, encrypted parent feedback
 next.config.ts                     # Additional security headers
 .env.example                       # New optional SEO/analytics/contact settings
 AUDIT_REPORT.md                    # Audit categories and residual risks
@@ -76,7 +82,7 @@ Never commit `.env.local`. The `.gitignore` already ignores `.env*` except `.env
 ## 3. Apply the Supabase SQL
 
 - **Fresh Supabase project:** run `supabase/schema.sql` in the Supabase SQL Editor. It includes the existing portal schema, contact submission storage, and the new class scorebook tables.
-- **Existing project:** apply `supabase/migrations/20261015_privacy_contact.sql` if it has not already been applied, then apply `supabase/migrations/20261015_class_scorebook.sql`. Both migrations are additive and do not replace existing grade data. Apply earlier project migrations too if they have not yet been installed.
+- **Existing project:** apply only migrations not yet installed, in dependency order: `supabase/migrations/20261015_privacy_contact.sql` (if missing), `supabase/migrations/20261015_class_scorebook.sql`, and `supabase/migrations/20261015_subject_roster_parent_feedback.sql`. The subject/feedback migration depends on the `gradebook_assessments` and `gradebook_scores` tables created by the scorebook migration. These migrations are additive; review your migration history before running them.
 
 Contact submissions are stored in `public.contact_submissions` with the name, email, subject and message encrypted by the server before insert using `SUPABASE_CONTACT_ENCRYPTION_KEY`, separate from the student birthday key. The table has RLS enabled and grants no direct access to `anon` or `authenticated` roles. The trusted server uses `service_role`; do not put that key in the browser.
 
@@ -142,3 +148,33 @@ Replace both paths with actual legacy/current routes; do not deploy the example 
 ## 9. Legal/security note
 
 The included Privacy Policy and Terms are tailored implementation drafts, not a warranty that the service strictly complies with every applicable law or DepEd/NPC obligation. The responsible controller and privacy contact, lawful bases, education-record retention, guardian authorization and incident obligations must be confirmed by the school. The current teacher UI directly queries names and grade records through Supabase with row-level security, so those existing fields are not application-field encrypted. Do not represent them as individually encrypted until a separate server-side migration/refactor is designed and verified.
+
+
+## 10. Saved subjects, parent feedback and class adviser
+
+### Subject dropdown and one-click grade roster
+
+Teachers save a subject once with `create_gradebook_subject`; `gradebook_subjects` is scoped to a section and enforces case-insensitive duplicate prevention after trimming. The scorebook dropdown loads from this saved catalog on later visits. **Add subject to grade roster** invokes `add_subject_to_section_roster`, which adds blank rows to `subject_grades` only when no row for that student/subject already exists. It does not replace any semester grades. A database trigger seeds existing catalog subjects for students who register later.
+
+Test with a non-production section first: save a new subject, reopen the scorebook and verify the dropdown; click Add subject to grade roster; check the `subject_grades` rows for that section; then enter some existing marks and click the button again to confirm those marks remain unchanged. Register a test student after the subject exists and verify blank rows were initialized automatically.
+
+### Parent/guardian grade feedback
+
+A successful `/api/students/lookup` response sets an HTTP-only, `SameSite=Strict`, 15-minute signed cookie scoped to `/api/students/feedback`. The form requires a guardian name, message and privacy acknowledgement. The feedback endpoint derives the student and target teacher from this signed token and the student's current section; callers cannot supply a recipient `teacher_id`. The name and message are AES-256-GCM encrypted using `SUPABASE_CONTACT_ENCRYPTION_KEY` before insert. Keep that key stable and backup it securely; lost/rotated keys make saved messages unreadable.
+
+Feedback is held in `public.student_parent_feedback`, which has RLS enabled and no direct grants to `anon` or `authenticated`. Only the server APIs use the Supabase service key to read/decrypt it. `/api/parent-feedback` validates the teacher's Supabase bearer token and filters every query/update by that teacher's user ID. `/teacher/feedback` is the teacher UI; the dashboard new-message count refreshes every 60 seconds while open. This build provides an in-app inbox and count, not email notifications. If email or SMS notifications are later added, send only a generic notification and keep the student's grades and message body out of email subject/body unless the school approves the necessary privacy controls.
+
+### Adviser assignment and parent-facing assessments
+
+The registered section's `teacher_sections.teacher_id` is the single source of truth for adviser assignment. The registration selector, registration confirmation and student grade report derive the display name from that teacher's `teacher_profiles` record. Do not accept adviser/teacher ID from the client as registration authority. The private grade lookup joins the student's class-scorebook assessments with only that student's saved `gradebook_scores`; blank assessment cells are omitted instead of shown as zero. Existing Quiz/Activity/Exam entries continue to display as legacy classwork.
+
+### Added verification checks
+
+1. Apply the subject/feedback migration in a staging database before deploying the UI.
+2. Verify the subject catalog cannot be created/read/rostered for a different teacher's section, and that the existing RLS/function ownership limits the RPC to `auth.uid()` owning the section.
+3. Verify newly registered students are assigned the adviser from their selected section, not a client-supplied teacher ID.
+4. Look up a test student and send feedback; confirm ciphertext (not plaintext) is stored in `student_parent_feedback` and that only the owning teacher can decrypt/view it.
+5. Sign in as another teacher and verify their inbox returns no feedback from the first teacher's sections and cannot update that message's status.
+6. Confirm the teacher dashboard new-feedback count updates on refresh/poll and message status changes from new to in review/resolved.
+7. Confirm the student-facing assessment table includes only recorded scores for the current student and does not turn blank cells into zero.
+8. Ensure `SUPABASE_LRN_HMAC_SECRET`, `SUPABASE_DATA_ENCRYPTION_KEY`, `SUPABASE_CONTACT_ENCRYPTION_KEY`, and Supabase service credentials are stable and server-only.
