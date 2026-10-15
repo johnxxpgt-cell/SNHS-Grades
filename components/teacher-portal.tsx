@@ -146,11 +146,14 @@ export function TeacherPortal() {
 
   useEffect(() => {
     const teacherId = user?.id;
-    if (!supabase || !teacherId) { setNewParentFeedbackCount(0); return; }
+    // Capture and narrow the client before declaring the callback. The async
+    // arrow below preserves this narrowing in TypeScript's closure analysis.
+    const client = supabase;
+    if (!client || !teacherId) { setNewParentFeedbackCount(0); return; }
     let active = true;
     let timer: ReturnType<typeof setInterval> | undefined;
-    async function refreshFeedbackCount() {
-      const { data } = await supabase.auth.getSession();
+    const refreshFeedbackCount = async () => {
+      const { data } = await client.auth.getSession();
       const token = data.session?.access_token;
       if (!token) { if (active) setNewParentFeedbackCount(0); return; }
       try {
@@ -164,7 +167,7 @@ export function TeacherPortal() {
       } catch {
         // Keep the last count if the network is briefly unavailable.
       }
-    }
+    };
     void refreshFeedbackCount();
     timer = setInterval(() => { void refreshFeedbackCount(); }, 60_000);
     return () => { active = false; if (timer) clearInterval(timer); };
