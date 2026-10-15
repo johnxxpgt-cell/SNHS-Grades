@@ -1336,3 +1336,26 @@ body { font-size: 16px; line-height: 1.55; }
   .student-dashboard-details:not([open]) > :not(summary) { display: block !important; }
   .student-dashboard-details > summary::after { display: none; }
 }
+
+/* Student profile-photo upload affordance: hover/focus on desktop, clear caption on touch screens. */
+.student-dashboard-photo-wrap { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 4px; }
+.student-dashboard-photo-control { position: relative; display: block; width: 58px; height: 58px; flex: 0 0 58px; overflow: hidden; border: 1px solid #dfe4e9; border-radius: 50%; background: #fff; cursor: pointer; }
+.student-dashboard-photo-control .student-dashboard-avatar { display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; object-fit: cover; }
+.student-dashboard-photo-control input { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.student-dashboard-photo-control input:disabled { cursor: wait; }
+.student-dashboard-photo-overlay { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; padding: 4px; color: #fff; background: rgb(23 43 74 / 82%); font-size: 9px; font-weight: 800; line-height: 1.15; text-align: center; opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
+.student-dashboard-photo-control:hover .student-dashboard-photo-overlay,
+.student-dashboard-photo-control:focus-within .student-dashboard-photo-overlay { opacity: 1; }
+.student-dashboard-photo-control.is-uploading .student-dashboard-photo-overlay { opacity: 1; }
+.student-dashboard-photo-control:focus-within { outline: 3px solid #8ba8cf; outline-offset: 3px; }
+.student-dashboard-photo-caption { color: #64738a; font-size: 9px; line-height: 1.2; text-align: center; white-space: nowrap; }
+.student-dashboard-photo-message { margin: -8px 0 12px; color: #23724a; font-size: 12px; }
+.student-dashboard-photo-message.is-error { color: #a52f38; }
+@media (max-width: 480px) {
+  .student-dashboard-photo-control { width: 54px; height: 54px; flex-basis: 54px; }
+  .student-dashboard-photo-caption { font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-dashboard-photo-overlay { transition: none; }
+}
+.student-dashboard-photo-control .student-dashboard-initials { display: grid; place-items: center; }

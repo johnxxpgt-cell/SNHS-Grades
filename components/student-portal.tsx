@@ -3,7 +3,7 @@
 import { ensurePageRequestId, fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { PortalHeader } from "@/components/brand";
 import { toWebpBlob } from "@/lib/student-images";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
@@ -41,6 +41,7 @@ export function StudentPortal() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarName, setAvatarName] = useState("");
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -151,7 +152,12 @@ export function StudentPortal() {
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true); setError(""); setNotice("");
+    setError(""); setNotice("");
+    if (!avatarFile) {
+      setError("Upload a profile photo before registering.");
+      return;
+    }
+    setBusy(true);
     try {
       const form = new FormData();
       form.set("fullName", fullName);
@@ -183,7 +189,8 @@ export function StudentPortal() {
     }
   }
 
-  async function handlePhoto(file?: File) {
+  async function handlePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
     setError("");
     try {
@@ -193,6 +200,7 @@ export function StudentPortal() {
       setAvatarName(file.name);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not process this photo.");
+      if (!avatarFile) event.target.value = "";
     }
   }
 
@@ -381,11 +389,11 @@ export function StudentPortal() {
                     {!sectionLoading && !sections.length && <p className="inline-hint">No sections are open yet. Ask your teacher to add a class section. Teachers can <Link href="/teacher">sign in or register here</Link>, then open their section for students.</p>}
                     <div className="field-row">
                       <label className="field"><span>Gender <small>Optional</small></span><select value={gender} onChange={(event) => setGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label>
-                      <label className="field"><span>Profile photo <small>Optional</small></span><span className="photo-control"><input type="file" accept="image/*" onChange={(event) => void handlePhoto(event.target.files?.[0])} /><span className="photo-faux">{avatar ? "Photo ready · WebP" : "Choose a photo"}</span></span></label>
+                      <label className="field"><span>Profile photo <small>Required</small></span><span className="photo-control"><input ref={photoInputRef} type="file" accept="image/*" required aria-label="Upload required student profile photo" onChange={(event) => void handlePhoto(event)} /><span className="photo-faux">{avatar ? "Photo ready · WebP" : "Choose a photo"}</span></span><small className="field-help">Upload a clear face photo. It is converted to WebP and stored privately.</small></label>
                     </div>
-                    {avatar && <div className="photo-preview"><img src={avatar} alt="Selected student profile preview" loading="lazy" decoding="async" /><span>{avatarName} <small>converted to WebP and stored securely</small></span><button type="button" onClick={() => { setAvatar(null); setAvatarFile(null); setAvatarName(""); }}>Remove</button></div>}
+                    {avatar && <div className="photo-preview"><img src={avatar} alt="Selected student profile preview" loading="lazy" decoding="async" /><span>{avatarName} <small>converted to WebP and stored securely</small></span><button type="button" onClick={() => { setAvatar(null); setAvatarFile(null); setAvatarName(""); if (photoInputRef.current) photoInputRef.current.value = ""; }}>Remove</button></div>}
                     <label className="consent-row"><input type="checkbox" checked={registrationPrivacyConsent} onChange={(event) => setRegistrationPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of these details for student registration and school-record access. If registering a minor, I confirm that I am the student or have appropriate parent/guardian authority.</span></label>
-                    <button className="button button-primary form-submit" type="submit" disabled={busy || sectionLoading || !sections.length || !registrationPrivacyConsent}>{busy ? <><span className="spinner" /> Registering…</> : <>Register student <span aria-hidden="true">→</span></>}</button>
+                    <button className="button button-primary form-submit" type="submit" disabled={busy || sectionLoading || !sections.length || !registrationPrivacyConsent || !avatarFile}>{busy ? <><span className="spinner" /> Registering…</> : <>Register student <span aria-hidden="true">→</span></>}</button>
                   </form>
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   <div className="privacy-note"><span aria-hidden="true">⌑</span><p><b>Check your details before submitting.</b> LRNs can only be registered once. For corrections, ask your teacher.</p></div>

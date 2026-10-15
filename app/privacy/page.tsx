@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
           <h2>2. Information the portal processes</h2>
           <ul>
-            <li><strong>Student account and identity details:</strong> name, Learner Reference Number (LRN) used to verify access, date of birth, optional gender and profile photo, class section, and a private PIN credential.</li>
+            <li><strong>Student account and identity details:</strong> name, Learner Reference Number (LRN) used to verify access, date of birth, optional gender, profile photo (required for new registrations), class section, and a private PIN credential.</li>
             <li><strong>School records:</strong> subject grades, assessment results, teacher comments, and the associated class/academic-year information.</li>
             <li><strong>Teacher account details:</strong> name, school email address, optional gender and photo, authentication/session information, and classroom records entered by the teacher.</li>
             <li><strong>Contact inquiries:</strong> name, email address, subject, message, consent version and timestamp.</li>

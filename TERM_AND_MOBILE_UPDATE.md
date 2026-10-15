@@ -25,3 +25,8 @@ Use the current `supabase/schema.sql` and do not replay this upgrade migration o
 ## Local checks
 
 Run `npm ci`, `npm run typecheck`, and `npm run build` from a network-enabled environment. Test phone layouts at 320 px, 375 px, and 768 px. The migration should be tested in staging before production.
+
+
+## Student profile photos and grade-table defaults
+
+Subject grades are collapsed by default on the student dashboard. New student registrations require a profile photo, which the browser converts to WebP before sending to the server. The registration API also validates the WebP signature and enforces the 2 MB limit. Students registered before this change can upload or change a photo from the profile image on their dashboard; hover/focus shows the upload action on desktop, and a visible caption makes the same action clear on touch screens. Student photo uploads use the authenticated HTTP-only student session and private Supabase Storage.

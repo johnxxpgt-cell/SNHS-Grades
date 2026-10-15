@@ -2,9 +2,10 @@
 
 import { fetchWithRequestId } from "@/lib/request-id";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
+import { toWebpBlob } from "@/lib/student-images";
 
 type GradeReport = {
   student: {
@@ -26,6 +27,9 @@ export function StudentGradeDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [photoNotice, setPhotoNotice] = useState("");
   const [guardianName, setGuardianName] = useState("");
   const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -68,6 +72,36 @@ export function StudentGradeDashboard() {
     } finally {
       router.replace("/student");
       router.refresh();
+    }
+  }
+
+  async function updateProfilePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+    setPhotoError("");
+    setPhotoNotice("");
+    setPhotoBusy(true);
+    try {
+      const webp = await toWebpBlob(selected);
+      const upload = new File([webp], "student-profile.webp", { type: "image/webp" });
+      const form = new FormData();
+      form.set("photo", upload, upload.name);
+      const response = await fetchWithRequestId("/api/students/profile-photo", {
+        method: "POST", body: form, cache: "no-store", credentials: "same-origin"
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        const reference = response.headers.get("X-Request-ID");
+        throw new Error(`${payload.error || "Profile photo could not be updated."}${response.status >= 500 && reference ? ` Reference ID: ${reference}` : ""}`);
+      }
+      if (typeof payload.avatar !== "string" || !payload.avatar) throw new Error("The photo was saved, but its preview could not be loaded. Refresh the page.");
+      setReport((current) => current ? { ...current, student: { ...current.student, avatar: payload.avatar } } : current);
+      setPhotoNotice("Profile photo updated.");
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Profile photo could not be updated.");
+    } finally {
+      setPhotoBusy(false);
+      event.target.value = "";
     }
   }
 
@@ -130,7 +164,14 @@ export function StudentGradeDashboard() {
         </header>
 
         <section className="student-dashboard-profile">
-          {report.student.avatar ? <img className="student-dashboard-avatar" src={report.student.avatar} alt="" /> : <div className="student-dashboard-avatar student-dashboard-initials">{initials}</div>}
+          <div className="student-dashboard-photo-wrap">
+            <label className={`student-dashboard-photo-control${photoBusy ? " is-uploading" : ""}`} title={report.student.avatar ? "Change profile photo" : "Upload profile photo"}>
+              {report.student.avatar ? <img className="student-dashboard-avatar" src={report.student.avatar} alt="" /> : <div className="student-dashboard-avatar student-dashboard-initials">{initials}</div>}
+              <span className="student-dashboard-photo-overlay" aria-hidden="true">{photoBusy ? "Uploading…" : report.student.avatar ? "Change photo" : "Upload photo"}</span>
+              <input type="file" accept="image/*" aria-label={report.student.avatar ? "Change profile photo" : "Upload profile photo"} onChange={updateProfilePhoto} disabled={photoBusy} />
+            </label>
+            <small className="student-dashboard-photo-caption">{photoBusy ? "Uploading…" : report.student.avatar ? "Change photo" : "Upload photo"}</small>
+          </div>
           <div className="student-dashboard-profile-copy">
             <p className="student-dashboard-kicker">MY GRADES</p>
             <h1>{report.student.fullName}</h1>
@@ -138,13 +179,15 @@ export function StudentGradeDashboard() {
             <p className="student-dashboard-muted">Adviser: {report.student.adviserName} · {report.student.section.academic_year}</p>
           </div>
         </section>
+        {photoError && <p className="student-dashboard-photo-message is-error" role="alert">{photoError}</p>}
+        {photoNotice && <p className="student-dashboard-photo-message" role="status">{photoNotice}</p>}
 
         <section className="student-dashboard-average" aria-label="Overall average">
           <span>Overall average</span>
           <strong>{average === null ? "—" : average}<small>{average === null ? "" : " / 100"}</small></strong>
         </section>
 
-        <details className="student-dashboard-details" open>
+        <details className="student-dashboard-details">
           <summary><span>Subject grades</span><small>Term 1 · Term 2 · Term 3 · Final</small></summary>
           <div className="student-dashboard-table-wrap">
             <table className="student-dashboard-table">

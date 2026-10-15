@@ -38,13 +38,12 @@ export async function POST(request: Request) {
     }
     if (!sectionId) return jsonError("Choose an available class section.");
     if (!["Female", "Male", "Prefer not to say"].includes(gender)) return jsonError("Choose a valid gender option.");
-    if (photoEntry && !(photoEntry instanceof File)) return jsonError("Choose a valid profile photo.");
-    if (photo && photo.size === 0) return jsonError("Choose a photo with image data.");
-    if (photo && (photo.type !== "image/webp" || photo.size > 2 * 1024 * 1024)) {
+    if (!photo || photo.size === 0) return jsonError("Upload a profile photo before registering.");
+    if (photo.type !== "image/webp" || photo.size > 2 * 1024 * 1024) {
       return jsonError("The profile photo must be a WebP image under 2 MB.");
     }
-    const photoBytes = photo ? Buffer.from(await photo.arrayBuffer()) : null;
-    if (photoBytes && (photoBytes.toString("ascii", 0, 4) !== "RIFF" || photoBytes.toString("ascii", 8, 12) !== "WEBP")) {
+    const photoBytes = Buffer.from(await photo.arrayBuffer());
+    if (photoBytes.toString("ascii", 0, 4) !== "RIFF" || photoBytes.toString("ascii", 8, 12) !== "WEBP") {
       return jsonError("The profile photo must be a valid WebP image.");
     }
 
@@ -60,15 +59,13 @@ export async function POST(request: Request) {
 
     const accessDigest = digestStudentAccess(fullName, lrn);
     const studentId = randomUUID();
-    const photoPath = photo ? `students/${studentId}/${randomUUID()}.webp` : null;
-    if (photo && photoPath) {
-      const { error: uploadError } = await admin.storage.from("profile-photos").upload(photoPath, photoBytes!, {
-        contentType: "image/webp",
-        cacheControl: "3600",
-        upsert: false
-      });
-      if (uploadError) throw uploadError;
-    }
+    const photoPath = `students/${studentId}/${randomUUID()}.webp`;
+    const { error: uploadError } = await admin.storage.from("profile-photos").upload(photoPath, photoBytes, {
+      contentType: "image/webp",
+      cacheControl: "3600",
+      upsert: false
+    });
+    if (uploadError) throw uploadError;
     const { error } = await admin.from("students").insert({
       id: studentId,
       full_name: fullName,
@@ -83,7 +80,7 @@ export async function POST(request: Request) {
       privacy_consented_at: new Date().toISOString()
     });
     if (error) {
-      if (photoPath) await admin.storage.from("profile-photos").remove([photoPath]);
+      await admin.storage.from("profile-photos").remove([photoPath]);
       if (error.code === "23505") return jsonError("This student could not be registered. Please check the details or ask your teacher for help.", 409);
       throw error;
     }

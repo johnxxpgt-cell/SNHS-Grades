@@ -81,3 +81,8 @@ See `STUDENT_DASHBOARD_SESSION_UPDATE.md` for route behavior, security notes, an
 The Student and Teacher portal entry links carry a fresh non-secret `request_id` UUID. Each first-party `/api/*` request also receives its own `request_id` query parameter and `X-Request-ID` header; `proxy.ts` forwards and logs the ID with method/path only, then echoes it in the response header. Server-side student lookup, registration, session, and parent-feedback logs can be correlated by this value. Teacher authentication is performed directly by Supabase Auth, so the portal attempt has a UUID reference but the Supabase request URL is deliberately left unchanged to avoid altering the provider's authentication API. These IDs are for diagnostics only and never grant access.
 
 See `REQUEST_ID_QUERY_PARAMETERS.md` for troubleshooting steps.
+
+
+## Student profile photos
+
+New student registrations require a profile photo. The browser converts the selected image to WebP before upload; the server independently validates the WebP signature and enforces a 2 MB limit. Students with existing accounts can upload or change their photo from the profile avatar on `/student/dashboard`. Profile uploads require the signed-in student session and are stored in the private `profile-photos` bucket.
