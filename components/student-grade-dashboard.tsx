@@ -222,7 +222,7 @@ export function StudentGradeDashboard() {
 
         <details className="student-dashboard-details student-dashboard-feedback">
           <summary><span>Message class adviser</span><small>Parent / guardian feedback</small></summary>
-          <form className="student-dashboard-feedback-form" onSubmit={sendFeedback}>
+          <form method="post" className="student-dashboard-feedback-form" onSubmit={sendFeedback}>
             <label>Parent or guardian name<input value={guardianName} onChange={(event) => setGuardianName(event.target.value)} required minLength={2} maxLength={100} autoComplete="name" /></label>
             <label>Subject (optional)<select value={feedbackSubject} onChange={(event) => setFeedbackSubject(event.target.value)}><option value="">General grade feedback</option>{report.availableSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
             <label>Message<textarea value={feedbackMessage} onChange={(event) => setFeedbackMessage(event.target.value.slice(0, 2000))} required minLength={10} maxLength={2000} rows={3} placeholder="Write a question about grades or progress." /></label>

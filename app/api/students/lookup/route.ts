@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { readBodyLimited } from "@/lib/server/body-limit";
 import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, createStudentFeedbackTicket, createStudentSessionTicket, digestStudentAccess, digestStudentPin, jsonError } from "@/lib/server/security";
@@ -15,8 +16,9 @@ export async function POST(request: Request) {
     }
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return jsonError("Send the grade lookup as JSON.", 415);
-    const rawText = await request.text();
-    if (rawText.length > 4096) return jsonError("The grade lookup request is too large.", 413);
+    const boundedBody = await readBodyLimited(request, 4096);
+    if (!boundedBody) return jsonError("The grade lookup request is too large.", 413);
+    const rawText = new TextDecoder().decode(boundedBody);
     let rawBody: unknown;
     try {
       rawBody = JSON.parse(rawText);
@@ -175,12 +177,9 @@ export async function POST(request: Request) {
     });
     const assessments = [...legacyAssessments, ...classScorebookAssessments]
       .sort((left, right) => right.assessedOn.localeCompare(left.assessedOn) || right.updatedAt.localeCompare(left.updatedAt));
-    let avatar = student.avatar_webp_data_url;
-    if (student.avatar_path) {
-      const { data: signedPhoto, error: signedPhotoError } = await admin.storage.from("profile-photos").createSignedUrl(student.avatar_path, 3600);
-      if (signedPhotoError) throw signedPhotoError;
-      avatar = signedPhoto.signedUrl;
-    }
+    // Never return Supabase signed URLs (they carry bearer-like tokens in the URL).
+    // The private same-origin image endpoint uses the student session cookie.
+    const avatar = student.avatar_path || student.avatar_webp_data_url ? "/api/students/photo" : null;
     const response = Response.json({
       student: {
         fullName: student.full_name,
@@ -197,7 +196,7 @@ export async function POST(request: Request) {
       assessments,
       teacherComment: commentResult.data?.comment ?? null,
       commentUpdatedAt: commentResult.data?.updated_at ?? null
-    }, { headers: { "Cache-Control": "no-store, private" } });
+    }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0" } });
     const ticket = createStudentFeedbackTicket(student.id);
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
     response.headers.append("Set-Cookie", `snhs_feedback_ticket=${ticket}; Path=/api/students/feedback; HttpOnly; SameSite=Strict; Max-Age=900${secure}`);

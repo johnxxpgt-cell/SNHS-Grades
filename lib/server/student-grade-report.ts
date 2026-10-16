@@ -74,12 +74,8 @@ export async function getStudentGradeReport(studentId: string) {
     }];
   });
 
-  let avatar = student.avatar_webp_data_url;
-  if (student.avatar_path) {
-    const { data, error } = await admin.storage.from("profile-photos").createSignedUrl(student.avatar_path, 3600);
-    if (error) throw error;
-    avatar = data.signedUrl;
-  }
+  // Keep private storage tokens out of image URLs and grade-report JSON.
+  const avatar = student.avatar_path || student.avatar_webp_data_url ? "/api/students/photo" : null;
   return {
     student: {
       fullName: student.full_name,

@@ -2,6 +2,7 @@ import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, encryptSensitiveField, jsonError, verifyStudentFeedbackTicket, verifyStudentSessionTicket } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
+import { readBodyLimited } from "@/lib/server/body-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ function privateResponse(body: unknown, status = 200, clearTicket = false, reque
   const response = Response.json(body, {
     status,
     headers: {
-      "Cache-Control": "no-store, private",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0",
       "X-Content-Type-Options": "nosniff",
       ...(requestId ? { "X-Request-ID": requestId } : {})
     }
@@ -44,13 +45,14 @@ export async function POST(request: Request) {
   let stage = "request_validation";
   try {
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Feedback must be submitted from the school website.", requestId }, { status: 403, headers: { "Cache-Control": "no-store", "X-Request-ID": requestId } });
-    if (request.headers.get("sec-fetch-site") === "cross-site") return Response.json({ error: "Cross-site feedback requests are not accepted.", requestId }, { status: 403, headers: { "Cache-Control": "no-store", "X-Request-ID": requestId } });
+    if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Feedback must be submitted from the school website.", requestId }, { status: 403, headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Request-ID": requestId } });
+    if (request.headers.get("sec-fetch-site") === "cross-site") return Response.json({ error: "Cross-site feedback requests are not accepted.", requestId }, { status: 403, headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Request-ID": requestId } });
 
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return jsonError("Send feedback as JSON.", 415);
-    const raw = await request.text();
-    if (raw.length > 8000) return jsonError("Your feedback is too long. Please shorten it.", 413);
+    const boundedBody = await readBodyLimited(request, 8000);
+    if (!boundedBody) return jsonError("Your feedback is too long. Please shorten it.", 413);
+    const raw = new TextDecoder().decode(boundedBody);
     let parsed: unknown;
     try { parsed = JSON.parse(raw); } catch { return jsonError("The feedback form could not be read.", 400); }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return jsonError("The feedback form could not be read.", 400);
@@ -126,7 +128,6 @@ export async function POST(request: Request) {
     return privateResponse({ message: "Your feedback has been delivered to the class adviser for this section.", requestId }, 201, true, requestId);
   } catch (error) {
     // Keep technical details in server logs only; never return secrets, SQL messages, or PII to the browser.
-    const detail = error instanceof Error ? error.message : String(error);
     const code = error && typeof error === "object" && "code" in error
       ? String((error as { code?: unknown }).code ?? "")
       : "";
@@ -134,8 +135,7 @@ export async function POST(request: Request) {
       requestId,
       stage,
       name: error instanceof Error ? error.name : "UnknownError",
-      code: code || undefined,
-      detail
+      code: code || undefined
     });
     return privateResponse({
       error: "We could not send your feedback right now. Please try again shortly.",

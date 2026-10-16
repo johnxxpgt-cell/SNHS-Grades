@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, decryptSensitiveField, jsonError } from "@/lib/server/security";
+import { readBodyLimited } from "@/lib/server/body-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 function privateResponse(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" }
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Content-Type-Options": "nosniff" }
   });
 }
 
@@ -82,8 +83,9 @@ export async function PATCH(request: Request) {
     }
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return privateResponse({ error: "Send a JSON status update." }, 415);
-    const raw = await request.text();
-    if (raw.length > 2048) return privateResponse({ error: "The status update is too large." }, 413);
+    const boundedBody = await readBodyLimited(request, 2048);
+    if (!boundedBody) return privateResponse({ error: "The status update is too large." }, 413);
+    const raw = new TextDecoder().decode(boundedBody);
     let parsed: unknown;
     try { parsed = JSON.parse(raw); } catch { return privateResponse({ error: "The status update could not be read." }, 400); }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return privateResponse({ error: "The status update could not be read." }, 400);

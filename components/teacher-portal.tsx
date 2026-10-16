@@ -1,7 +1,7 @@
 "use client";
 
 import { ensurePageRequestId, fetchWithRequestId, rotatePageRequestId } from "@/lib/request-id";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PortalHeader } from "@/components/brand";
 import { ClassScorebook } from "@/components/class-scorebook";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -96,6 +96,23 @@ export function TeacherPortal() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newParentFeedbackCount, setNewParentFeedbackCount] = useState(0);
+  const profilePhotoObjectUrls = useRef<Set<string>>(new Set());
+  const rosterPhotoObjectUrls = useRef<Set<string>>(new Set());
+
+  const clearObjectUrls = useCallback((collection: MutableRefObject<Set<string>>) => {
+    for (const url of collection.current) URL.revokeObjectURL(url);
+    collection.current.clear();
+  }, []);
+  const createProfileObjectUrl = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob); profilePhotoObjectUrls.current.add(url); return url;
+  }, []);
+  const createRosterObjectUrl = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob); rosterPhotoObjectUrls.current.add(url); return url;
+  }, []);
+  useEffect(() => () => {
+    clearObjectUrls(profilePhotoObjectUrls);
+    clearObjectUrls(rosterPhotoObjectUrls);
+  }, [clearObjectUrls]);
 
   useEffect(() => {
     ensurePageRequestId();
@@ -127,9 +144,10 @@ export function TeacherPortal() {
     setProfileName(profile?.full_name ?? "Teacher");
     setProfileGender(profile?.gender ?? "Prefer not to say");
     setProfileAvatarPath(profile?.avatar_path ?? null);
+    clearObjectUrls(profilePhotoObjectUrls);
     if (profile?.avatar_path) {
-      const { data: signedPhoto } = await supabase.storage.from("profile-photos").createSignedUrl(profile.avatar_path, 3600);
-      setProfileAvatar(signedPhoto?.signedUrl ?? profile.avatar_webp_data_url ?? null);
+      const { data: photoBlob } = await supabase.storage.from("profile-photos").download(profile.avatar_path);
+      setProfileAvatar(photoBlob ? createProfileObjectUrl(photoBlob) : profile.avatar_webp_data_url ?? null);
     } else {
       setProfileAvatar(profile?.avatar_webp_data_url ?? null);
     }
@@ -142,7 +160,7 @@ export function TeacherPortal() {
     setSections(rows);
     setSelectedSectionId((previous) => rows.some((row) => row.id === previous) ? previous : rows[0]?.id ?? "");
     setLoadingDashboard(false);
-  }, [supabase]);
+  }, [supabase, clearObjectUrls, createProfileObjectUrl]);
 
   useEffect(() => { if (user) void loadDashboard(user.id); else setLoadingDashboard(false); }, [user, loadDashboard]);
 
@@ -186,14 +204,16 @@ export function TeacherPortal() {
     if (rosterError) console.error("[teacher-portal] Roster query failed:", rosterError);
     if (rosterError) setError("We couldn’t load this class roster. Please refresh and try again.");
     const rows = (data ?? []) as (Omit<StudentRow, "avatar_url"> & { avatar_path: string | null; avatar_webp_data_url: string | null })[];
-    const photoPaths = rows.flatMap((row) => row.avatar_path ? [row.avatar_path] : []);
-    const signedPhotos = photoPaths.length
-      ? await supabase.storage.from("profile-photos").createSignedUrls(photoPaths, 3600)
-      : { data: [] };
-    const signedByPath = new Map((signedPhotos.data ?? []).flatMap((photo) => photo.signedUrl ? [[photo.path, photo.signedUrl] as const] : []));
-    setStudents(rows.map((row) => ({ ...row, avatar_url: row.avatar_path ? signedByPath.get(row.avatar_path) ?? null : row.avatar_webp_data_url })) as StudentRow[]);
+    clearObjectUrls(rosterPhotoObjectUrls);
+    const photoEntries = await Promise.all(rows.map(async (row) => {
+      if (!row.avatar_path) return [row.id, row.avatar_webp_data_url] as const;
+      const { data: photoBlob } = await supabase.storage.from("profile-photos").download(row.avatar_path);
+      return [row.id, photoBlob ? createRosterObjectUrl(photoBlob) : null] as const;
+    }));
+    const avatarByStudent = new Map(photoEntries);
+    setStudents(rows.map((row) => ({ ...row, avatar_url: avatarByStudent.get(row.id) ?? null })) as StudentRow[]);
     setLoadingRoster(false);
-  }, [supabase]);
+  }, [supabase, clearObjectUrls, createRosterObjectUrl]);
 
   useEffect(() => { if (selectedSectionId) void loadRoster(selectedSectionId); }, [selectedSectionId, loadRoster]);
 
@@ -263,18 +283,14 @@ export function TeacherPortal() {
       const path = `teachers/${user.id}/${crypto.randomUUID()}.webp`;
       const { error: uploadError } = await supabase.storage.from("profile-photos").upload(path, photo, { contentType: "image/webp", cacheControl: "3600", upsert: false });
       if (uploadError) throw uploadError;
-      const { data: signedPhoto, error: signError } = await supabase.storage.from("profile-photos").createSignedUrl(path, 3600);
-      if (signError || !signedPhoto) {
-        await supabase.storage.from("profile-photos").remove([path]);
-        throw signError ?? new Error("The uploaded photo could not be opened.");
-      }
       const { error: photoError } = await supabase.from("teacher_profiles").update({ avatar_path: path, avatar_webp_data_url: null }).eq("id", user.id);
       if (photoError) {
         await supabase.storage.from("profile-photos").remove([path]);
         throw photoError;
       }
       if (profileAvatarPath) await supabase.storage.from("profile-photos").remove([profileAvatarPath]);
-      setProfileAvatarPath(path); setProfileAvatar(signedPhoto.signedUrl); setNotice("Your profile photo is saved as a WebP file.");
+      clearObjectUrls(profilePhotoObjectUrls);
+      setProfileAvatarPath(path); setProfileAvatar(createProfileObjectUrl(photo)); setNotice("Your profile photo is saved as a WebP file.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Your profile photo could not be saved.");
     } finally { setBusy(false); }
@@ -406,14 +422,14 @@ export function TeacherPortal() {
       <div className="portal-shell">
         <PortalHeader breadcrumbs={[{ label: "Home", href: "/" }, { label: "Teacher portal"}]} />
         {!supabase ? (
-          <section className="setup-message"><span className="section-kicker">TEACHER SERVICES</span><h1>Set up your secure<br /><em>teacher workspace.</em></h1><p>Connect the Supabase project to enable teacher registration and class records.</p><div className="setup-code">NEXT_PUBLIC_SUPABASE_URL<br />NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY<br />SUPABASE_SECRET_KEY<br />SUPABASE_LRN_HMAC_SECRET<br />SUPABASE_DATA_ENCRYPTION_KEY<br />SUPABASE_CONTACT_ENCRYPTION_KEY</div><a href="/" className="text-link">← Return to home</a></section>
+          <section className="setup-message"><span className="section-kicker">TEACHER SERVICES</span><h1>Set up your secure<br /><em>teacher workspace.</em></h1><p>Connect the Supabase project to enable teacher registration and class records.</p><p className="setup-code">The site administrator must finish the secure server configuration before this portal can be used.</p><a href="/" className="text-link">← Return to home</a></section>
         ) : user ? (
           <section className="teacher-dashboard">
             <div className="dashboard-heading"><div><span className="section-kicker">TEACHER WORKSPACE</span><h1>Welcome back, <em>{profileName.split(" ")[0]}.</em></h1><p>Your class records, ready when you are.</p></div><div className="dashboard-account"><label className="account-photo-control" title="Upload profile photo">{profileAvatar ? <img src={profileAvatar} alt="Teacher profile" loading="lazy" decoding="async" /> : <span className="teacher-avatar">{profileName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<input type="file" accept="image/*" aria-label="Upload teacher profile photo" onChange={(event) => void handleTeacherPhoto(event.target.files?.[0])} /></label><div><b>{profileName}</b><small>{profileGender} · {user.email}</small></div><button className="signout-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></div></div>
             {error && <p className="form-alert error-alert" role="alert">{error}</p>}
             {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
             <div className="dashboard-toolbar"><div><label htmlFor="teacher-section-select">CLASS SECTION</label><select id="teacher-section-select" value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedStudentId(""); }} disabled={!sections.length}><option value="">{sections.length ? "Choose a section" : "No sections yet"}</option>{sections.map((section) => <option value={section.id} key={section.id}>Grade {section.grade_level} — {section.section_name} · {section.academic_year}</option>)}</select></div><div className="dashboard-toolbar-actions"><button type="button" className="button button-outline" onClick={() => setShowClassScorebook((value) => !value)} disabled={!selectedSectionId}>{showClassScorebook ? "Back to roster" : "Open class scorebook"}</button><Link href="/teacher/feedback" className="button button-outline feedback-inbox-link">Parent feedback inbox{newParentFeedbackCount > 0 ? <span className="feedback-count-badge">{newParentFeedbackCount} new</span> : null}</Link><button type="button" className="button button-outline" onClick={() => setShowAddSection((value) => !value)}>{showAddSection ? "Close" : "+ Add a section"}</button></div></div>
-            {showAddSection && <form className="add-section-panel" onSubmit={handleAddSection}><div><span className="form-overline">NEW CLASS</span><h2>Open another section</h2><p>Students can register as soon as it’s added.</p></div><label className="field"><span>Grade level</span><select value={newGradeLevel} onChange={(event) => setNewGradeLevel(event.target.value)}>{[7, 8, 9, 10, 11, 12].map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="field"><span>Section name</span><input value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} maxLength={40} required placeholder="e.g. Rizal" /></label><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add section"}</button></form>}
+            {showAddSection && <form method="post" className="add-section-panel" onSubmit={handleAddSection}><div><span className="form-overline">NEW CLASS</span><h2>Open another section</h2><p>Students can register as soon as it’s added.</p></div><label className="field"><span>Grade level</span><select value={newGradeLevel} onChange={(event) => setNewGradeLevel(event.target.value)}>{[7, 8, 9, 10, 11, 12].map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="field"><span>Section name</span><input value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} maxLength={40} required placeholder="e.g. Rizal" /></label><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add section"}</button></form>}
             {loadingDashboard ? <div className="dashboard-loading"><span className="spinner" /> Loading your workspace…</div> : sections.length ? (
               <>
                 <div className="dashboard-stats"><div><span>CLASS ROSTER</span><b>{students.length.toString().padStart(2, "0")}<small> students</small></b></div><div><span>SUBJECT RECORDS</span><b>{students.reduce((sum, student) => sum + (student.subject_grades?.length ?? 0), 0).toString().padStart(2, "0")}<small> entered</small></b></div><div><span>CLASS AVERAGE</span><b>{classAverage ?? "—"}<small>{classAverage === null ? " no grades" : " / 100"}</small></b></div><div className="stats-school-year"><span>ACADEMIC YEAR</span><b>{selectedSection?.academic_year ?? academicYear()}</b></div></div>
@@ -442,7 +458,7 @@ export function TeacherPortal() {
                   <section className="grade-editor-panel" id="grade-editor-panel">
                     {selectedStudent ? <>
                       <div className="editor-heading"><div><span className="form-overline">GRADE ENTRY</span><h2>{selectedStudent.full_name}</h2><p>Enter grades from 0 to 100.</p></div><button type="button" aria-label="Close grade editor" className="editor-close" onClick={() => setSelectedStudentId("")}>×</button></div>
-                      <form onSubmit={handleSaveGrades}>
+                      <form method="post" onSubmit={handleSaveGrades}>
                         <div className="grade-draft-heading"><span>SUBJECT</span><span>TERM 1</span><span>TERM 2</span><span>TERM 3</span></div>
                         <div className="grade-draft-list">{drafts.map((draft, index) => <div className="grade-draft-row" key={index}>
                           <input aria-label={`Subject ${index + 1}`} value={draft.subjectName} onChange={(event) => setDrafts((previous) => previous.map((item, row) => row === index ? { ...item, subjectName: event.target.value } : item))} maxLength={80} placeholder="Subject name" />
@@ -457,7 +473,7 @@ export function TeacherPortal() {
                       <p className="editor-note"><span className="mini-shield">✓</span> Only teachers assigned to this section can edit these records.</p>
                       <section className="assessment-editor">
                         <div className="assessment-section-heading"><span className="form-overline">CLASSWORK & TESTS</span><h3>Add an assessment score</h3><p>Scores are visible in the student portal as soon as they are saved.</p></div>
-                        <form className="assessment-form" onSubmit={handleAddAssessment}>
+                        <form method="post" className="assessment-form" onSubmit={handleAddAssessment}>
                           <div className="field-row"><label className="field"><span>Type</span><select value={assessmentCategory} onChange={(event) => setAssessmentCategory(event.target.value as AssessmentRow["category"])}><option>Quiz</option><option>Activity</option><option>Exam</option></select></label><label className="field"><span>Date</span><input type="date" value={assessmentDate} onChange={(event) => setAssessmentDate(event.target.value)} required /></label></div>
                           <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} required minLength={2} maxLength={100} placeholder="e.g. Fractions quiz" /></label>
                           <div className="assessment-points-row"><label className="field"><span>Score</span><input type="number" inputMode="decimal" value={assessmentScore} onChange={(event) => setAssessmentScore(event.target.value)} required min="0" max="100000" step="0.01" placeholder="0" /></label><span className="points-divider">out of</span><label className="field"><span>Maximum points</span><input type="number" inputMode="decimal" value={assessmentMaxScore} onChange={(event) => setAssessmentMaxScore(event.target.value)} required min="0.01" max="100000" step="0.01" /></label></div>
@@ -469,7 +485,7 @@ export function TeacherPortal() {
                       </section>
                       <section className="teacher-comment-editor">
                         <div className="assessment-section-heading"><span className="form-overline">TEACHER FEEDBACK</span><h3>Comment for this student</h3><p>This private teacher note appears on the student’s grade report.</p></div>
-                        <form onSubmit={handleSaveComment}><label className="field"><span>Comment <small>{commentDraft.length}/1,000</small></span><textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value.slice(0, 1000))} maxLength={1000} rows={4} placeholder="Write a helpful note about progress, effort, or next steps…" /></label><button className="button button-outline editor-save" type="submit" disabled={busy}>{busy ? "Saving…" : hasTeacherComment ? (commentDraft.trim() ? "Update comment" : "Remove comment") : "Share comment"}</button></form>
+                        <form method="post" onSubmit={handleSaveComment}><label className="field"><span>Comment <small>{commentDraft.length}/1,000</small></span><textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value.slice(0, 1000))} maxLength={1000} rows={4} placeholder="Write a helpful note about progress, effort, or next steps…" /></label><button className="button button-outline editor-save" type="submit" disabled={busy}>{busy ? "Saving…" : hasTeacherComment ? (commentDraft.trim() ? "Update comment" : "Remove comment") : "Share comment"}</button></form>
                       </section>
                     </> : <div className="editor-empty"><span className="editor-empty-icon">✎</span><span className="form-overline">GRADE ENTRY</span><h2>Select a student<br />to get started.</h2><p>Choose a student from your roster to add or update their subject grades.</p></div>}
                   </section>
@@ -483,7 +499,7 @@ export function TeacherPortal() {
               <div className="portal-workspace teacher-auth-workspace"><div className="portal-tabs" role="tablist" aria-label="Teacher account options"><button className={authMode === "signin" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "signin"} onClick={() => { setAuthMode("signin"); setError(""); setNotice(""); }}>Sign in <span>01</span></button><button className={authMode === "register" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "register"} onClick={() => { setAuthMode("register"); setError(""); setNotice(""); }}>New teacher? Register <span>02</span></button></div>
                 <div className="form-panel"><div className="form-heading"><div><span className="form-overline">{authMode === "signin" ? "WELCOME BACK" : "TEACHER REGISTRATION"}</span><h2>{authMode === "signin" ? "Sign in to your class" : "Create your teacher account"}</h2></div><span className="round-icon" aria-hidden="true">{authMode === "signin" ? "↗" : "＋"}</span></div>
                   <p className="form-description">{authMode === "signin" ? "Use the email address and password linked to your teacher account." : "Create your secure teacher login first. You can add a class section after signing in."}</p>
-                  <form className="form-stack" onSubmit={handleAuth}>
+                  <form method="post" className="form-stack" onSubmit={handleAuth}>
                     {authMode === "register" && <><label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={3} maxLength={120} autoComplete="name" placeholder="Your name" /></label></>}
                     {authMode === "register" ? <div className="field-row"><label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label><label className="field"><span>Gender <small>Optional</small></span><select value={teacherGender} onChange={(event) => setTeacherGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label></div> : <label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label>}
                     <label className="field"><span>Password {authMode === "register" && <small>At least 12 characters</small>}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={authMode === "register" ? 12 : 1} autoComplete={authMode === "signin" ? "current-password" : "new-password"} placeholder="Enter your password" /></label>

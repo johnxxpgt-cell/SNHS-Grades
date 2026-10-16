@@ -29,7 +29,7 @@ export async function GET() {
       academic_year: row.academic_year,
       adviserName: names.get(row.teacher_id)?.trim() || "Class adviser not listed"
     }));
-    return Response.json({ sections }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ sections }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0" } });
   } catch (error) {
     console.error("[sections] Could not load class sections:", error instanceof Error ? error.message : "Unknown error");
     return Response.json({ error: "Class sections are temporarily unavailable." }, { status: 503 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readBodyLimited, requestWithBufferedBody } from "@/lib/server/body-limit";
 import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, jsonError, verifyStudentSessionTicket } from "@/lib/server/security";
@@ -18,7 +19,7 @@ function readCookie(request: Request, name: string) {
 function errorResponse(message: string, status: number, requestId: string) {
   return Response.json({ error: message, requestId }, {
     status,
-    headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff", "X-Request-ID": requestId }
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Content-Type-Options": "nosniff", "X-Request-ID": requestId }
   });
 }
 
@@ -50,7 +51,10 @@ export async function POST(request: Request) {
     }
 
     stage = "read_photo";
-    const form = await request.formData();
+    const boundedBody = await readBodyLimited(request, MAX_PHOTO_BYTES + 256 * 1024);
+    if (!boundedBody) return errorResponse("The profile-photo request is too large.", 413, requestId);
+    const formRequest = requestWithBufferedBody(request, boundedBody);
+    const form = await formRequest.formData();
     const entry = form.get("photo");
     if (!(entry instanceof File) || entry.size === 0) return errorResponse("Choose a profile photo first.", 400, requestId);
     if (entry.type !== "image/webp" || entry.size > MAX_PHOTO_BYTES) {
@@ -81,10 +85,6 @@ export async function POST(request: Request) {
     if (uploadError) throw uploadError;
     uploadCompleted = true;
 
-    stage = "sign_photo_url";
-    const { data: signed, error: signError } = await admin.storage.from("profile-photos").createSignedUrl(uploadedPath, 3600);
-    if (signError || !signed?.signedUrl) throw signError ?? new Error("Photo URL could not be created.");
-
     stage = "save_photo_path";
     const { data: updatedStudent, error: updateError } = await admin.from("students")
       .update({ avatar_path: uploadedPath, avatar_webp_data_url: null })
@@ -100,8 +100,8 @@ export async function POST(request: Request) {
       if (removeOldError) console.warn("[api/students/profile-photo] old photo cleanup failed", { requestId });
     }
 
-    return Response.json({ avatar: signed.signedUrl, message: "Profile photo updated." }, {
-      headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff", "X-Request-ID": requestId }
+    return Response.json({ avatar: "/api/students/photo", message: "Profile photo updated." }, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Content-Type-Options": "nosniff", "X-Request-ID": requestId }
     });
   } catch (error) {
     if (uploadCompleted && uploadedPath && !databaseUpdated) {

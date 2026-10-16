@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readBodyLimited, requestWithBufferedBody } from "@/lib/server/body-limit";
 import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, encryptStudentBirthday, jsonError } from "@/lib/server/security";
@@ -14,7 +15,10 @@ export async function POST(request: Request) {
     if (!(await allowRequest(request, "student-register", 5, 3600))) {
       return jsonError("Too many registration attempts. Please try again later.", 429);
     }
-    const form = await request.formData();
+    const boundedBody = await readBodyLimited(request, 2_500 * 1024);
+    if (!boundedBody) return jsonError("The registration request is too large. Keep the processed profile photo under 2 MB.", 413);
+    const formRequest = requestWithBufferedBody(request, boundedBody);
+    const form = await formRequest.formData();
     const fullName = String(form.get("fullName") ?? "").trim().replace(/\s+/g, " ");
     const lrn = String(form.get("lrn") ?? "").replace(/\D/g, "");
     const pin = String(form.get("pin") ?? "");
@@ -97,7 +101,7 @@ export async function POST(request: Request) {
       gradeLevel: section.grade_level,
       sectionName: section.section_name,
       adviserName: adviserProfile?.full_name?.trim() || "Class adviser not listed"
-    }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    }, { status: 201, headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0" } });
   } catch (error) {
     console.error("[api/students/register] request failed", {
       requestId,

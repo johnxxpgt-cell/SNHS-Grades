@@ -53,7 +53,7 @@ export function ContactForm({ privacyEmail }: { privacyEmail: string }) {
   }
 
   return (
-    <form className="form-stack contact-form" onSubmit={submit}>
+    <form method="post" className="form-stack contact-form" onSubmit={submit}>
       <label className="field">
         <span>Your name</span>
         <input name="name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required minLength={2} maxLength={80} />

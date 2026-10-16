@@ -6,6 +6,7 @@ import {
   jsonError
 } from "@/lib/server/security";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
+import { readBodyLimited } from "@/lib/server/body-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ function privateResponse(body: unknown, status = 200) {
   return Response.json(body, {
     status,
     headers: {
-      "Cache-Control": "no-store, private",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0",
       "X-Content-Type-Options": "nosniff"
     }
   });
@@ -57,8 +58,9 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return jsonError("Send the contact form as JSON.", 415);
 
-    const raw = await request.text();
-    if (raw.length > 12_000) return jsonError("The message is too large. Please shorten it and try again.", 413);
+    const boundedBody = await readBodyLimited(request, 12_000);
+    if (!boundedBody) return jsonError("The message is too large. Please shorten it and try again.", 413);
+    const raw = new TextDecoder().decode(boundedBody);
     let value: unknown;
     try {
       value = JSON.parse(raw);
@@ -151,8 +153,9 @@ export async function PATCH(request: Request) {
 
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return privateResponse({ error: "Send a JSON status update." }, 415);
-    const raw = await request.text();
-    if (raw.length > 2048) return privateResponse({ error: "The status update is too large." }, 413);
+    const boundedBody = await readBodyLimited(request, 2048);
+    if (!boundedBody) return privateResponse({ error: "The status update is too large." }, 413);
+    const raw = new TextDecoder().decode(boundedBody);
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return privateResponse({ error: "The status update could not be read." }, 400); }
     if (!value || typeof value !== "object" || Array.isArray(value)) return privateResponse({ error: "The status update could not be read." }, 400);
@@ -190,8 +193,9 @@ export async function DELETE(request: Request) {
 
     const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLocaleLowerCase("en");
     if (contentType !== "application/json") return privateResponse({ error: "Send a JSON deletion request." }, 415);
-    const raw = await request.text();
-    if (raw.length > 2048) return privateResponse({ error: "The deletion request is too large." }, 413);
+    const boundedBody = await readBodyLimited(request, 2048);
+    if (!boundedBody) return privateResponse({ error: "The deletion request is too large." }, 413);
+    const raw = new TextDecoder().decode(boundedBody);
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return privateResponse({ error: "The deletion request could not be read." }, 400); }
     if (!value || typeof value !== "object" || Array.isArray(value)) return privateResponse({ error: "The deletion request could not be read." }, 400);

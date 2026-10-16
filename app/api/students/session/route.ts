@@ -15,7 +15,7 @@ function readCookie(request: Request, name: string) {
 }
 
 function privateResponse(body: unknown, status = 200, renewedTicket?: string) {
-  const response = Response.json(body, { status, headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff", "Vary": "Cookie" } });
+  const response = Response.json(body, { status, headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "Pragma": "no-cache", "Expires": "0", "X-Content-Type-Options": "nosniff", "Vary": "Cookie" } });
   if (renewedTicket) {
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
     response.headers.append("Set-Cookie", `snhs_student_session=${renewedTicket}; Path=/api/students; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE}${secure}`);

@@ -382,7 +382,7 @@ export function ClassScorebook({
           <label className="field"><span>Term</span><select value={activeTerm} onChange={(event) => { setActiveTerm(Number(event.target.value)); setError(""); setNotice(""); }}>{[1, 2, 3].map((term) => <option value={term} key={term}>Term {term}</option>)}</select></label>
           <button className="button button-outline" type="button" onClick={() => void handleAddSubjectToRoster()} disabled={saving || !activeSubject}>{saving ? "Working…" : "+ Add subject to grade roster"}</button>
         </div>
-        <form className="scorebook-create-subject" onSubmit={handleCreateSubject}>
+        <form method="post" className="scorebook-create-subject" onSubmit={handleCreateSubject}>
           <label className="field"><span>Create a subject for this section</span><input value={newSubjectName} onChange={(event) => setNewSubjectName(event.target.value)} maxLength={80} minLength={2} placeholder="Type a subject once, e.g. Science" required /></label>
           <button className="button button-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "+ Save subject"}</button>
         </form>
@@ -393,7 +393,7 @@ export function ClassScorebook({
         <p><strong>Current:</strong> WW {weights["Written Works"]}% · PT {weights["Performance Tasks"]}% · Summative {weights["Summative Test/Exam"]}%. Confirm these weights against the school-approved grading policy before using for official grades.</p>
       </div>
 
-      <form className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
+      <form method="post" className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
         <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject || "Choose a subject"} · Term {activeTerm}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
         <div className="scorebook-add-grid">
           <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item}>{item}</option>)}</select></label>

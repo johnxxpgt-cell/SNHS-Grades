@@ -357,7 +357,7 @@ export function StudentPortal() {
                 <div className="form-panel">
                   <div className="form-heading"><div><span className="form-overline">STUDENT ACCESS</span><h2>Find your grades</h2></div><span className="round-icon" aria-hidden="true">⌕</span></div>
                   <p className="form-description">Enter your registered name, LRN, and 4-digit PIN. Your LRN and PIN stay private and are never shown on the report.</p>
-                  <form className="form-stack" onSubmit={handleLookup}>
+                  <form method="post" className="form-stack" onSubmit={handleLookup}>
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="e.g. Juan Dela Cruz" /></label>
                     <label className="field"><span>Learner Reference Number <small>LRN</small></span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="Enter your LRN" /></label>
                     <label className="field"><span>4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Enter your PIN" /><small className="field-help">If your record existed before PINs were added, your first successful lookup saves the PIN you enter.</small></label>
@@ -373,7 +373,7 @@ export function StudentPortal() {
                   <div className="form-heading"><div><span className="form-overline">NEW STUDENT</span><h2>Join your class</h2></div><span className="round-icon" aria-hidden="true">＋</span></div>
                   <p className="form-description">Complete these steps once to join your class. Choose the section your teacher gave you; your grade level and class adviser will be assigned automatically.</p>
                   <ol className="registration-steps"><li>Enter your school-record details</li><li>Choose your Grade and Section</li><li>Review consent and register</li></ol>
-                  <form className="form-stack" onSubmit={handleRegister}>
+                  <form method="post" className="form-stack" onSubmit={handleRegister}>
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="As shown on your school record" /></label>
                     <div className="field-row">
                       <label className="field"><span>LRN</span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="8–20 digits" /></label>
@@ -424,7 +424,7 @@ export function StudentPortal() {
                 {result.teacherComment && <section className="student-teacher-comment"><div><span className="form-overline">A NOTE FROM YOUR TEACHER</span>{result.commentUpdatedAt && <small>Updated {new Date(result.commentUpdatedAt).toLocaleDateString()}</small>}</div><p>{result.teacherComment}</p></section>}
                 <section className="student-teacher-comment parent-feedback-panel">
                   <div><span className="form-overline">PARENT / GUARDIAN SERVICES</span><h3>Send feedback to the class adviser</h3><p>Your message will be routed to <strong>{result.student.adviserName}</strong>, the teacher responsible for this registered section. Message contents are encrypted while stored.</p></div>
-                  <form className="form-stack parent-feedback-fields" onSubmit={handleParentFeedback}>
+                  <form method="post" className="form-stack parent-feedback-fields" onSubmit={handleParentFeedback}>
                     <label className="field"><span>Parent or guardian name</span><input value={feedbackGuardianName} onChange={(event) => setFeedbackGuardianName(event.target.value)} required minLength={2} maxLength={100} autoComplete="name" placeholder="Enter your name" /></label>
                     <label className="field"><span>Subject (optional)</span><select value={feedbackSubject} onChange={(event) => setFeedbackSubject(event.target.value)}><option value="">General grade feedback</option>{result.availableSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
                     <label className="field"><span>Message for the class adviser</span><textarea value={feedbackMessage} onChange={(event) => setFeedbackMessage(event.target.value.slice(0, 2000))} required minLength={10} maxLength={2000} rows={4} placeholder="Ask a question or share feedback about the student's grades or progress…" /></label>
