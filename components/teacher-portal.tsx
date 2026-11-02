@@ -230,10 +230,14 @@ export function TeacherPortal() {
     let authStage: "sign_in" | "register" = authMode === "register" ? "register" : "sign_in";
     try {
       if (authMode === "register") {
+        const registrationEmail = email.trim();
+        if (!/^[^\s@]+@deped\.gov\.ph$/i.test(registrationEmail)) {
+          throw new Error("Use your official DepEd email address ending in @deped.gov.ph to register.");
+        }
         if (!privacyConsent) throw new Error("Please read the Privacy Policy and consent before creating an account.");
         if (password !== confirmPassword) throw new Error("Your passwords don’t match.");
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(), password,
+          email: registrationEmail, password,
           options: {
             emailRedirectTo: teacherConfirmationUrl(),
             data: {
@@ -501,7 +505,7 @@ export function TeacherPortal() {
                   <p className="form-description">{authMode === "signin" ? "Use the email address and password linked to your teacher account." : "Create your secure teacher login first. You can add a class section after signing in."}</p>
                   <form method="post" className="form-stack" onSubmit={handleAuth}>
                     {authMode === "register" && <><label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={3} maxLength={120} autoComplete="name" placeholder="Your name" /></label></>}
-                    {authMode === "register" ? <div className="field-row"><label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label><label className="field"><span>Gender <small>Optional</small></span><select value={teacherGender} onChange={(event) => setTeacherGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label></div> : <label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label>}
+                    {authMode === "register" ? <div className="field-row"><label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="name@deped.gov.ph" aria-describedby="teacher-email-domain-hint" /><small id="teacher-email-domain-hint">Registration requires an @deped.gov.ph address.</small></label><label className="field"><span>Gender <small>Optional</small></span><select value={teacherGender} onChange={(event) => setTeacherGender(event.target.value)}><option>Prefer not to say</option><option>Female</option><option>Male</option></select></label></div> : <label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label>}
                     <label className="field"><span>Password {authMode === "register" && <small>At least 12 characters</small>}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={authMode === "register" ? 12 : 1} autoComplete={authMode === "signin" ? "current-password" : "new-password"} placeholder="Enter your password" /></label>
                     {authMode === "register" && <label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={12} autoComplete="new-password" placeholder="Enter your password again" /></label>}
                     {authMode === "register" && <label className="consent-row"><input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of my account details to provide teacher services.</span></label>}

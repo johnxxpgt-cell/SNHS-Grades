@@ -134,6 +134,29 @@ create index if not exists students_section_idx on public.students (section_id, 
 create index if not exists subject_grades_student_idx on public.subject_grades (student_id, subject_name);
 create index if not exists student_assessments_student_date_idx on public.student_assessments (student_id, assessed_on desc);
 
+-- Teacher accounts can only be created with an official DepEd email address.
+create or replace function public.enforce_deped_teacher_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if coalesce(new.email, '') !~* '^[^@[:space:]]+@deped[.]gov[.]ph$' then
+    raise exception using
+      errcode = '23514',
+      message = 'Teacher registration requires an @deped.gov.ph email address.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_deped_teacher_email on auth.users;
+create trigger enforce_deped_teacher_email
+  before insert on auth.users
+  for each row execute procedure public.enforce_deped_teacher_email();
+revoke all on function public.enforce_deped_teacher_email() from public, anon, authenticated;
+
 -- All self-service Auth sign-ups are teacher accounts. Teachers add sections from their own portal.
 create or replace function public.handle_new_teacher()
 returns trigger

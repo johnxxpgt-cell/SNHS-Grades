@@ -141,7 +141,7 @@ Replace both paths with actual legacy/current routes; do not deploy the example 
 5. `/robots.txt` disallows private routes and points to `/sitemap.xml`; the sitemap contains only `/`, `/contact`, `/privacy`, `/terms`.
 6. Contact form submissions are visible as ciphertext in the database and readable only in `/teacher/messages` for an allowlisted authenticated account.
 7. Invalid/missing contact consent is rejected; repeated submissions receive rate limiting; logs do not include contact message values.
-8. Student lookup/registration and teacher signup require privacy acknowledgement; student registration stores the privacy-notice version/time.
+8. Student lookup/registration and teacher signup require privacy acknowledgement; student registration stores the privacy-notice version/time. New teacher accounts require an email address at the exact `@deped.gov.ph` domain; the teacher form and Supabase Auth database trigger both enforce this.
 9. Search Console and GA4 work only after valid IDs are configured. Confirm GA4 does not collect private route paths or form/grade data.
 10. Apply the class scorebook migration and verify a teacher can create, edit, reload, and delete assessment columns only inside their own section. Try a score above its maximum and a student from another section; the database must reject both.
 11. Review `AUDIT_REPORT.md` and complete the legal/security launch blockers before production.
