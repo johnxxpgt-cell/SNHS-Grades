@@ -195,10 +195,10 @@ export default function HomePage() {
 
       <footer className="site-footer page-wrap">
         <Brand />
-        <p>
+        <p className="site-footer-address">
           Salvacion National High School <span>·</span> Busuanga, Palawan
         </p>
-        <p>
+        <p className="site-footer-credit">
          <span>|</span><a href="https://darrenbardelas.xyz/">Made by Libarrium</a>
         </p>
         <nav className="footer-links" aria-label="Helpful links">

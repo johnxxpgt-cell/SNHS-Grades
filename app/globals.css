@@ -2030,3 +2030,34 @@ select:focus-visible, textarea:focus-visible {
   .analytics-consent-actions { flex-direction: row; }
   .analytics-consent-actions button { flex: 1; }
 }
+
+@media (max-width: 720px) {
+  .site-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px 16px;
+    padding-block: 20px;
+  }
+  .site-footer > .brand { grid-column: 1; grid-row: 1; }
+  .site-footer > .footer-mark { grid-column: 2; grid-row: 1; }
+  .site-footer > .site-footer-address { grid-column: 1 / -1; grid-row: 2; }
+  .site-footer > .site-footer-credit { grid-column: 1 / -1; grid-row: 3; }
+  .site-footer > .footer-links { grid-column: 1 / -1; grid-row: 4; width: 100%; }
+  .site-footer p { min-width: 0; line-height: 1.5; }
+}
+
+@media (max-width: 480px) {
+  .site-footer > .footer-links {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 12px 14px;
+    justify-content: start;
+  }
+  .site-footer > .footer-links > :first-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 360px) {
+  .site-footer > .footer-links { display: flex; }
+  .site-footer > .footer-links > :first-child { grid-column: auto; }
+}
