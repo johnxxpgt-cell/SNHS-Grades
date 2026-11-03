@@ -18,7 +18,7 @@ export default function PrivacyPage() {
       <div className="public-page-shell legal-shell">
         <header className="public-page-header"><Brand /><Link href="/" className="back-link">← Back to home</Link></header>
         <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Privacy Policy" }]} />
-        <section className="public-page-hero"><span className="section-kicker">DATA PROTECTION</span><h1>Privacy <em>Policy</em></h1><p>Last updated: 15 October 2026</p></section>
+        <section className="public-page-hero"><span className="section-kicker">DATA PROTECTION</span><h1>Privacy <em>Policy</em></h1><p>Last updated: 3 November 2026</p></section>
         {!privacyEmail && <p className="configuration-notice">Before production use, the school must set <code>NEXT_PUBLIC_PRIVACY_CONTACT_EMAIL</code> to an official monitored privacy contact and confirm the responsible Personal Information Controller.</p>}
         <article className="public-card legal-content">
           <p>This notice explains how SNHS Gradebook handles personal information when students look up or register school records, teachers manage classroom records, or visitors submit a general inquiry. It is written for the Salvacion National High School portal and should be reviewed and formally approved by the responsible school/DepEd privacy officer before launch. It is not a certification of legal compliance.</p>
@@ -28,22 +28,23 @@ export default function PrivacyPage() {
 
           <h2>2. Information the portal processes</h2>
           <ul>
-            <li><strong>Student account and identity details:</strong> name, Learner Reference Number (LRN) used to verify access, date of birth, optional gender, profile photo (required for new registrations), class section, and a private PIN credential.</li>
+            <li><strong>Student account and identity details:</strong> name, Learner Reference Number (LRN) used to verify access, date of birth, optional gender, profile photo (required for new registrations), a private PIN credential, a personal recovery question, and a keyed digest of its answer.</li>
             <li><strong>School records:</strong> subject grades, assessment results, teacher comments, and the associated class/academic-year information.</li>
             <li><strong>Teacher account details:</strong> name, school email address, optional gender and photo, authentication/session information, and classroom records entered by the teacher.</li>
             <li><strong>Contact inquiries:</strong> name, email address, subject, message, consent version and timestamp.</li>
             <li><strong>Parent/guardian grade feedback:</strong> guardian name and message, optional subject, the associated student and class section, the responsible teacher, privacy-notice version, consent timestamp, and message status/handling timestamps.</li>
-            <li><strong>Security data:</strong> pseudonymous keyed digests used to limit repeated requests and a short-lived signed feedback ticket issued after a successful grade lookup. The application does not intentionally log submitted LRN/PIN form values.</li>
+            <li><strong>Security data:</strong> pseudonymous keyed digests used to verify student access, recovery answers, and repeated-request limits; a short-lived signed feedback ticket issued after a successful grade lookup; and a short-lived PIN-reset ticket issued after the student's LRN and exact birthday match. The application does not intentionally log submitted LRN/PIN form values.</li>
           </ul>
 
           <h2>3. Why information is processed</h2>
-          <p>Information is used to register a student in a teacher-created class, verify a grade lookup, display school records to the appropriate student, allow teachers to manage their own class roster, secure the service against abuse, respond to inquiries, maintain records of privacy acknowledgements, and meet applicable school-record and legal obligations. Optional analytics may be used to understand use of the public website only after a visitor accepts analytics cookies.</p>
+          <p>Information is used to register a student in a teacher-created class, verify a grade lookup, recover a forgotten student PIN, display school records to the appropriate student, allow teachers to manage their own class roster, secure the service against abuse, respond to inquiries, maintain records of privacy acknowledgements, and meet applicable school-record and legal obligations. Optional analytics may be used to understand use of the public website only after a visitor accepts analytics cookies.</p>
           <p>Parent/guardian feedback is intended for questions about the student's school progress and is routed to the teacher who owns the student's registered section. It is available only after a successful private grade lookup, uses a separate consent checkbox, and appears in that teacher's in-app feedback inbox. This release does not send the message by email.</p>
           <p>The responsible controller must document the applicable lawful basis for each processing purpose, including any school/public-function or legal-obligation basis. A checkbox is not a substitute for identifying the lawful basis required by law.</p>
 
           <h2>4. How information is safeguarded</h2>
           <ul>
             <li>Student LRNs and access proofs are represented in the application database by keyed HMAC digests; PINs are stored as keyed digests rather than plain text.</li>
+            <li>Student recovery answers are stored as keyed HMAC digests. A new recovery question is required during registration, and existing students are prompted to add one after signing in. PIN recovery also checks the exact encrypted birthday.</li>
             <li>Birthdays and contact-form fields are encrypted by the application with AES-256-GCM before database storage.</li>
             <li>Parent/guardian names and feedback message bodies are encrypted by the application with AES-256-GCM before database storage and are decrypted only through the authenticated, assigned-teacher inbox API. The feedback record is linked to the student and their registered section so it is not routed to a recipient supplied by the sender.</li>
             <li>Profile photos are converted to WebP and stored in a private Supabase Storage bucket; access links are time-limited.</li>

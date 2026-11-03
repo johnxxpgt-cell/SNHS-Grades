@@ -11,6 +11,7 @@ type GradeReport = {
   student: {
     fullName: string;
     avatar: string | null;
+    recoveryQuestionConfigured: boolean;
     section: { grade_level: number; section_name: string; academic_year: string };
     adviserName: string;
   };
@@ -37,6 +38,10 @@ export function StudentGradeDashboard() {
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const [feedbackNotice, setFeedbackNotice] = useState("");
+  const [recoveryQuestion, setRecoveryQuestion] = useState("");
+  const [recoveryAnswer, setRecoveryAnswer] = useState("");
+  const [recoverySetupBusy, setRecoverySetupBusy] = useState(false);
+  const [recoverySetupError, setRecoverySetupError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -126,6 +131,22 @@ export function StudentGradeDashboard() {
     } finally { setFeedbackBusy(false); }
   }
 
+  async function saveRecoveryQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setRecoverySetupBusy(true); setRecoverySetupError("");
+    try {
+      const response = await fetchWithRequestId("/api/students/recovery-question", {
+        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", credentials: "same-origin",
+        body: JSON.stringify({ question: recoveryQuestion, answer: recoveryAnswer })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Your recovery question could not be saved.");
+      setReport((current) => current ? { ...current, student: { ...current.student, recoveryQuestionConfigured: true } } : current);
+      setRecoveryQuestion(""); setRecoveryAnswer("");
+    } catch (error) {
+      setRecoverySetupError(error instanceof Error ? error.message : "Your recovery question could not be saved.");
+    } finally { setRecoverySetupBusy(false); }
+  }
+
   function downloadGradeReport() {
     if (!report) return;
     const csvCell = (value: string | number | null) => `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -154,6 +175,30 @@ export function StudentGradeDashboard() {
   if (loading) return <main className="student-dashboard-page"><div className="student-dashboard-message">Loading grades…</div></main>;
   if (loadError) return <main className="student-dashboard-page"><div className="student-dashboard-message"><p>{loadError}</p><Link href="/student">Back to sign in</Link></div></main>;
   if (!report) return <main className="student-dashboard-page"><div className="student-dashboard-message">Loading grades…</div></main>;
+
+  if (report && !report.student.recoveryQuestionConfigured) {
+    return (
+      <main className="student-dashboard-page">
+        <div className="student-dashboard-shell">
+          <header className="student-dashboard-header">
+            <Link className="student-dashboard-brand" href="/" aria-label="SNHS Gradebook home"><img src="/snhs-logo.webp" alt="" /><span>SNHS <small>GRADEBOOK</small></span></Link>
+            <button className="student-logout-button" type="button" onClick={() => void logout()} disabled={loggingOut}>{loggingOut ? "Signing out…" : "Log out"}</button>
+          </header>
+          <section className="student-recovery-setup">
+            <span className="student-dashboard-kicker">ACCOUNT SECURITY</span>
+            <h1>Set your personal recovery question</h1>
+            <p>Choose a question and answer you will remember. You’ll need your exact birthday and this answer if you forget your 4-digit PIN. Your answer is saved as a protected digest.</p>
+            <form method="post" className="form-stack" onSubmit={saveRecoveryQuestion}>
+              <label className="field"><span>Your personal recovery question</span><input value={recoveryQuestion} onChange={(event) => setRecoveryQuestion(event.target.value)} required minLength={8} maxLength={160} placeholder="Write a question only you can answer" /></label>
+              <label className="field"><span>Answer to your question</span><input value={recoveryAnswer} onChange={(event) => setRecoveryAnswer(event.target.value)} required minLength={2} maxLength={120} autoComplete="off" placeholder="Enter your private answer" /></label>
+              <button className="button button-primary form-submit" type="submit" disabled={recoverySetupBusy}>{recoverySetupBusy ? <><span className="spinner" /> Saving recovery question…</> : <>Save and open my grades <span aria-hidden="true">→</span></>}</button>
+            </form>
+            {recoverySetupError && <p className="form-alert error-alert" role="alert">{recoverySetupError}</p>}
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="student-dashboard-page">

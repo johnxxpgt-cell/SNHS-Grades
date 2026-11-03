@@ -6,7 +6,7 @@ export async function getStudentGradeReport(studentId: string) {
   const admin = getSupabaseAdmin();
   const { data: student, error: studentError } = await admin
     .from("students")
-    .select("id, full_name, avatar_path, avatar_webp_data_url, section_id, section:teacher_sections(teacher_id, grade_level, section_name, academic_year)")
+    .select("id, full_name, avatar_path, avatar_webp_data_url, recovery_question, section_id, section:teacher_sections(teacher_id, grade_level, section_name, academic_year)")
     .eq("id", studentId)
     .maybeSingle();
   if (studentError) throw studentError;
@@ -80,6 +80,7 @@ export async function getStudentGradeReport(studentId: string) {
     student: {
       fullName: student.full_name,
       avatar,
+      recoveryQuestionConfigured: Boolean(student.recovery_question),
       section: {
         grade_level: joinedSection.grade_level,
         section_name: joinedSection.section_name,

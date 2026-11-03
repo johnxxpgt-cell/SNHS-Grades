@@ -36,6 +36,18 @@ export function StudentPortal() {
   const [lookupPrivacyConsent, setLookupPrivacyConsent] = useState(false);
   const [registrationPrivacyConsent, setRegistrationPrivacyConsent] = useState(false);
   const [birthday, setBirthday] = useState("");
+  const [recoveryQuestion, setRecoveryQuestion] = useState("");
+  const [recoveryAnswer, setRecoveryAnswer] = useState("");
+  const [pinResetOpen, setPinResetOpen] = useState(false);
+  const [pinResetReady, setPinResetReady] = useState(false);
+  const [pinResetQuestion, setPinResetQuestion] = useState<string | null>(null);
+  const [pinResetLrn, setPinResetLrn] = useState("");
+  const [pinResetBirthday, setPinResetBirthday] = useState("");
+  const [pinResetAnswer, setPinResetAnswer] = useState("");
+  const [pinResetNewPin, setPinResetNewPin] = useState("");
+  const [pinResetBusy, setPinResetBusy] = useState(false);
+  const [pinResetError, setPinResetError] = useState("");
+  const [pinResetNotice, setPinResetNotice] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [gender, setGender] = useState("Prefer not to say");
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -164,6 +176,8 @@ export function StudentPortal() {
       form.set("lrn", lrn);
       form.set("pin", pin);
       form.set("birthday", birthday);
+      form.set("recoveryQuestion", recoveryQuestion);
+      form.set("recoveryAnswer", recoveryAnswer);
       form.set("sectionId", sectionId);
       form.set("gender", gender);
       form.set("privacyConsent", registrationPrivacyConsent ? "accepted" : "");
@@ -177,7 +191,7 @@ export function StudentPortal() {
         throw new Error(response.status >= 500 && requestId ? `${message} Reference ID: ${requestId}` : message);
       }
       setNotice(`${payload.message} You’re registered for Grade ${payload.gradeLevel} — ${payload.sectionName}. Class adviser: ${payload.adviserName || "Class adviser not listed"}.`);
-      setFullName(""); setLrn(""); setPin(""); setBirthday(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName(""); setRegistrationPrivacyConsent(false);
+      setFullName(""); setLrn(""); setPin(""); setBirthday(""); setRecoveryQuestion(""); setRecoveryAnswer(""); setSectionId(""); setGender("Prefer not to say"); setAvatar(null); setAvatarFile(null); setAvatarName(""); setRegistrationPrivacyConsent(false);
       setMode("lookup");
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.delete("mode");
@@ -202,6 +216,41 @@ export function StudentPortal() {
       setError(caught instanceof Error ? caught.message : "Could not process this photo.");
       if (!avatarFile) event.target.value = "";
     }
+  }
+
+  async function startPinReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPinResetBusy(true); setPinResetError(""); setPinResetNotice("");
+    try {
+      const response = await fetchWithRequestId("/api/students/reset-pin", {
+        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+        body: JSON.stringify({ step: "challenge", lrn: pinResetLrn, birthday: pinResetBirthday })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "We could not verify those details.");
+      setPinResetQuestion(typeof payload.securityQuestion === "string" ? payload.securityQuestion : null);
+      setPinResetReady(true);
+    } catch (caught) {
+      setPinResetError(caught instanceof Error ? caught.message : "We could not verify those details.");
+    } finally { setPinResetBusy(false); }
+  }
+
+  async function finishPinReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPinResetBusy(true); setPinResetError(""); setPinResetNotice("");
+    try {
+      const response = await fetchWithRequestId("/api/students/reset-pin", {
+        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+        body: JSON.stringify({ step: "reset", recoveryAnswer: pinResetAnswer, newPin: pinResetNewPin })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Your PIN could not be reset.");
+      setNotice(payload.message || "Your PIN has been reset. Sign in with your new 4-digit PIN.");
+      setPinResetOpen(false); setPinResetReady(false); setPinResetQuestion(null);
+      setPinResetLrn(""); setPinResetBirthday(""); setPinResetAnswer(""); setPinResetNewPin("");
+    } catch (caught) {
+      setPinResetError(caught instanceof Error ? caught.message : "Your PIN could not be reset.");
+    } finally { setPinResetBusy(false); }
   }
 
   const reportedFinals = result?.subjects.map((subject) => subject.finalGrade).filter((grade): grade is number => grade !== null) ?? [];
@@ -364,6 +413,30 @@ export function StudentPortal() {
                     <label className="consent-row"><input type="checkbox" checked={lookupPrivacyConsent} onChange={(event) => setLookupPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and acknowledge that my details will be processed to verify and display my school record.</span></label>
                     <button className="button button-primary form-submit" type="submit" disabled={busy || !lookupPrivacyConsent}>{busy ? <><span className="spinner" /> Looking up grades…</> : <>View my grades <span aria-hidden="true">→</span></>}</button>
                   </form>
+                  {!pinResetOpen ? <button className="button button-outline form-submit" type="button" onClick={() => { setPinResetOpen(true); setPinResetReady(false); setPinResetError(""); setPinResetNotice(""); }}>Forgot your PIN? Reset it with your LRN and exact birthday</button> : (
+                    <section className="pin-reset-panel" aria-labelledby="pin-reset-title">
+                      <div className="form-heading"><div><span className="form-overline">ACCOUNT RECOVERY</span><h3 id="pin-reset-title">Reset your student PIN</h3></div></div>
+                      <p className="form-description">Enter the LRN and exact birthday saved with your school record. Newer registrations also need the personal recovery question and answer they set.</p>
+                      {!pinResetReady ? (
+                        <form method="post" className="form-stack" onSubmit={startPinReset}>
+                          <label className="field"><span>LRN</span><input value={pinResetLrn} onChange={(event) => setPinResetLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="Enter your LRN" /></label>
+                          <label className="field"><span>Exact birthday</span><input type="date" value={pinResetBirthday} onChange={(event) => setPinResetBirthday(event.target.value)} autoComplete="bday" required max={new Date().toISOString().slice(0, 10)} /></label>
+                          <button className="button button-primary form-submit" type="submit" disabled={pinResetBusy}>{pinResetBusy ? <><span className="spinner" /> Checking details…</> : <>Continue <span aria-hidden="true">→</span></>}</button>
+                        </form>
+                      ) : (
+                        <form method="post" className="form-stack" onSubmit={finishPinReset}>
+                          {pinResetQuestion && <><p className="recovery-question"><strong>Your recovery question</strong><br />{pinResetQuestion}</p><label className="field"><span>Your answer</span><input value={pinResetAnswer} onChange={(event) => setPinResetAnswer(event.target.value)} autoComplete="off" required minLength={2} maxLength={120} placeholder="Enter the answer you set" /></label></>}
+                          {!pinResetQuestion && <p className="inline-hint">No recovery question was saved for this older student record. Your LRN and exact birthday verified the reset.</p>}
+                          <label className="field"><span>New 4-digit PIN</span><input type="password" value={pinResetNewPin} onChange={(event) => setPinResetNewPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Choose a new PIN" /></label>
+                          <button className="button button-primary form-submit" type="submit" disabled={pinResetBusy || !/^\d{4}$/.test(pinResetNewPin)}>{pinResetBusy ? <><span className="spinner" /> Resetting PIN…</> : <>Save new PIN <span aria-hidden="true">→</span></>}</button>
+                          <button className="button button-quiet" type="button" onClick={() => { setPinResetReady(false); setPinResetQuestion(null); setPinResetAnswer(""); setPinResetNewPin(""); setPinResetError(""); }}>Back</button>
+                        </form>
+                      )}
+                      {pinResetError && <p className="form-alert error-alert" role="alert">{pinResetError}</p>}
+                      {pinResetNotice && <p className="form-alert success-alert" role="status">{pinResetNotice}</p>}
+                      <button className="button button-quiet" type="button" onClick={() => { setPinResetOpen(false); setPinResetReady(false); setPinResetQuestion(null); setPinResetAnswer(""); setPinResetNewPin(""); setPinResetError(""); }}>Cancel PIN reset</button>
+                    </section>
+                  )}
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
                   <div className="privacy-note"><span aria-hidden="true">⌑</span><p><b>Your details are protected.</b> Grade lookups are private and monitored to prevent repeated guessing.</p></div>
@@ -380,6 +453,8 @@ export function StudentPortal() {
                       <label className="field"><span>Birthday</span><input type="date" value={birthday} onChange={(event) => setBirthday(event.target.value)} autoComplete="bday" required max={new Date().toISOString().slice(0, 10)} /></label>
                     </div>
                     <label className="field"><span>Create a 4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Choose a private PIN" /><small className="field-help">Use this PIN with your name and LRN whenever you view your record.</small></label>
+                    <label className="field"><span>Personal recovery question</span><input value={recoveryQuestion} onChange={(event) => setRecoveryQuestion(event.target.value)} required minLength={8} maxLength={160} placeholder="Write a question only you can answer" /><small className="field-help">Choose a question you will remember. Avoid answers other people can easily guess.</small></label>
+                    <label className="field"><span>Answer to your recovery question</span><input value={recoveryAnswer} onChange={(event) => setRecoveryAnswer(event.target.value)} required minLength={2} maxLength={120} autoComplete="off" placeholder="Your private answer" /><small className="field-help">Your answer is stored as a protected digest, not as readable text.</small></label>
                     <label className="field"><span>Class section <small>Grade level is assigned automatically</small></span>
                       <select value={sectionId} onChange={(event) => setSectionId(event.target.value)} required disabled={sectionLoading || !sections.length}>
                         <option value="">{sectionLoading ? "Loading open sections…" : sections.length ? "Choose your section" : "No sections open for registration"}</option>

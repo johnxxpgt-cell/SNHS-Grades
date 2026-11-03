@@ -45,6 +45,14 @@ function teacherConfirmationUrl() {
   return new URL("/auth/callback?next=/teacher", configuredOrigin).toString();
 }
 
+function teacherRecoveryUrl() {
+  const configuredOrigin = process.env.NEXT_PUBLIC_APP_URL?.trim() || window.location.origin;
+  const url = new URL("/auth/callback", configuredOrigin);
+  url.searchParams.set("next", "/teacher");
+  url.searchParams.set("flow", "recovery");
+  return url.toString();
+}
+
 function averageFor(rows: GradeRow[]) {
   const averages = rows.map((row) => {
     const values = [row.term_1, row.term_2, row.term_3].filter((value) => value !== null).map(Number);
@@ -64,6 +72,10 @@ export function TeacherPortal() {
   const supabase = getSupabaseBrowserClient();
   const [user, setUser] = useState<TeacherUser | null>(null);
   const [authMode, setAuthMode] = useState<"signin" | "register">("signin");
+  const [emailRecoveryMode, setEmailRecoveryMode] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryPasswordConfirmation, setRecoveryPasswordConfirmation] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -127,6 +139,15 @@ export function TeacherPortal() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    if (url.searchParams.get("recovery") === "1") {
+      setRecoveryMode(true);
+      setEmailRecoveryMode(false);
+      setAuthMode("signin");
+      setNotice("Choose a new password for your teacher account.");
+      url.searchParams.delete("recovery");
+      window.history.replaceState({}, "", url.toString());
+      return;
+    }
     if (url.searchParams.get("confirmed") !== "1") return;
     setNotice("Email confirmed. Your teacher account is ready. Add a class section to open registration for students.");
     url.searchParams.delete("confirmed");
@@ -279,6 +300,40 @@ export function TeacherPortal() {
     await supabase.auth.signOut(); setUser(null); setNotice("You’ve signed out securely.");
   }
 
+  async function handleSendRecoveryEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    const requestId = rotatePageRequestId();
+    if (!supabase) { setError("Add your Supabase URL and publishable key to the environment settings first."); setBusy(false); return; }
+    try {
+      const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: teacherRecoveryUrl() });
+      if (recoveryError) throw recoveryError;
+      setNotice("If a teacher account matches that email address, a password reset link will arrive shortly.");
+    } catch (caught) {
+      console.error("[teacher-portal] password recovery request failed", {
+        requestId,
+        errorName: caught instanceof Error ? caught.name : "UnknownError"
+      });
+      setError("We could not send a password reset email. Check the address and try again.");
+    } finally { setBusy(false); }
+  }
+
+  async function handlePasswordRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    if (!supabase) { setError("The teacher portal is not connected to Supabase yet."); setBusy(false); return; }
+    if (recoveryPassword.length < 12) { setError("Choose a password with at least 12 characters."); setBusy(false); return; }
+    if (recoveryPassword !== recoveryPasswordConfirmation) { setError("Your passwords do not match."); setBusy(false); return; }
+    try {
+      const { data, error: updateError } = await supabase.auth.updateUser({ password: recoveryPassword });
+      if (updateError) throw updateError;
+      if (data.user) setUser({ id: data.user.id, email: data.user.email });
+      setRecoveryMode(false);
+      setRecoveryPassword(""); setRecoveryPasswordConfirmation("");
+      setNotice("Your password has been updated. You are signed in securely.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Your password could not be updated. Request a fresh reset email and try again.");
+    } finally { setBusy(false); }
+  }
+
   async function handleTeacherPhoto(file?: File) {
     if (!file || !supabase || !user) return;
     setBusy(true); setError(""); setNotice("");
@@ -427,7 +482,7 @@ export function TeacherPortal() {
         <PortalHeader breadcrumbs={[{ label: "Home", href: "/" }, { label: "Teacher portal"}]} />
         {!supabase ? (
           <section className="setup-message"><span className="section-kicker">TEACHER SERVICES</span><h1>Set up your secure<br /><em>teacher workspace.</em></h1><p>Connect the Supabase project to enable teacher registration and class records.</p><p className="setup-code">The site administrator must finish the secure server configuration before this portal can be used.</p><a href="/" className="text-link">← Return to home</a></section>
-        ) : user ? (
+        ) : user && !recoveryMode ? (
           <section className="teacher-dashboard">
             <div className="dashboard-heading"><div><span className="section-kicker">TEACHER WORKSPACE</span><h1>Welcome back, <em>{profileName.split(" ")[0]}.</em></h1><p>Your class records, ready when you are.</p></div><div className="dashboard-account"><label className="account-photo-control" title="Upload profile photo">{profileAvatar ? <img src={profileAvatar} alt="Teacher profile" loading="lazy" decoding="async" /> : <span className="teacher-avatar">{profileName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span>}<input type="file" accept="image/*" aria-label="Upload teacher profile photo" onChange={(event) => void handleTeacherPhoto(event.target.files?.[0])} /></label><div><b>{profileName}</b><small>{profileGender} · {user.email}</small></div><button className="signout-button" type="button" onClick={() => void handleSignOut()}>Sign out</button></div></div>
             {error && <p className="form-alert error-alert" role="alert">{error}</p>}
@@ -500,8 +555,26 @@ export function TeacherPortal() {
         ) : (
           <div className="teacher-auth-layout">
             <section className="teacher-auth-main"><div className="portal-intro"><span className="section-kicker">TEACHER SERVICES</span><h1>Good records make<br /><em>room to teach.</em></h1><p>Sign in to manage your class roster, term grades, assessment scores, and feedback.</p></div>
-              <div className="portal-workspace teacher-auth-workspace"><div className="portal-tabs" role="tablist" aria-label="Teacher account options"><button className={authMode === "signin" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "signin"} onClick={() => { setAuthMode("signin"); setError(""); setNotice(""); }}>Sign in <span>01</span></button><button className={authMode === "register" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "register"} onClick={() => { setAuthMode("register"); setError(""); setNotice(""); }}>New teacher? Register <span>02</span></button></div>
-                <div className="form-panel"><div className="form-heading"><div><span className="form-overline">{authMode === "signin" ? "WELCOME BACK" : "TEACHER REGISTRATION"}</span><h2>{authMode === "signin" ? "Sign in to your class" : "Create your teacher account"}</h2></div><span className="round-icon" aria-hidden="true">{authMode === "signin" ? "↗" : "＋"}</span></div>
+              <div className="portal-workspace teacher-auth-workspace">{!recoveryMode && !emailRecoveryMode && <div className="portal-tabs" role="tablist" aria-label="Teacher account options"><button className={authMode === "signin" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "signin"} onClick={() => { setAuthMode("signin"); setEmailRecoveryMode(false); setError(""); setNotice(""); }}>Sign in <span>01</span></button><button className={authMode === "register" ? "portal-tab active" : "portal-tab"} type="button" role="tab" aria-selected={authMode === "register"} onClick={() => { setAuthMode("register"); setEmailRecoveryMode(false); setError(""); setNotice(""); }}>New teacher? Register <span>02</span></button></div>}
+                <div className="form-panel">
+                  {recoveryMode ? <>
+                    <div className="form-heading"><div><span className="form-overline">ACCOUNT RECOVERY</span><h2>Choose a new password</h2></div><span className="round-icon" aria-hidden="true">↻</span></div>
+                    <p className="form-description">Set a new password with at least 12 characters to finish recovering your teacher account.</p>
+                    <form method="post" className="form-stack" onSubmit={handlePasswordRecovery}>
+                      <label className="field"><span>New password</span><input type="password" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} required minLength={12} autoComplete="new-password" /></label>
+                      <label className="field"><span>Confirm new password</span><input type="password" value={recoveryPasswordConfirmation} onChange={(event) => setRecoveryPasswordConfirmation(event.target.value)} required minLength={12} autoComplete="new-password" /></label>
+                      <button className="button button-primary form-submit" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Updating password…</> : <>Update password <span aria-hidden="true">→</span></>}</button>
+                    </form>
+                  </> : emailRecoveryMode ? <>
+                    <div className="form-heading"><div><span className="form-overline">ACCOUNT RECOVERY</span><h2>Reset your password</h2></div><span className="round-icon" aria-hidden="true">↻</span></div>
+                    <p className="form-description">Enter the email address linked to your teacher account. We’ll send a reset link if an account matches.</p>
+                    <form method="post" className="form-stack" onSubmit={handleSendRecoveryEmail}>
+                      <label className="field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@school.edu.ph" /></label>
+                      <button className="button button-primary form-submit" type="submit" disabled={busy}>{busy ? <><span className="spinner" /> Sending email…</> : <>Send reset link <span aria-hidden="true">→</span></>}</button>
+                    </form>
+                    <button className="button button-quiet" type="button" onClick={() => { setEmailRecoveryMode(false); setError(""); setNotice(""); }}>Back to sign in</button>
+                  </> : <>
+                  <div className="form-heading"><div><span className="form-overline">{authMode === "signin" ? "WELCOME BACK" : "TEACHER REGISTRATION"}</span><h2>{authMode === "signin" ? "Sign in to your class" : "Create your teacher account"}</h2></div><span className="round-icon" aria-hidden="true">{authMode === "signin" ? "↗" : "＋"}</span></div>
                   <p className="form-description">{authMode === "signin" ? "Use the email address and password linked to your teacher account." : "Create your secure teacher login first. You can add a class section after signing in."}</p>
                   <form method="post" className="form-stack" onSubmit={handleAuth}>
                     {authMode === "register" && <><label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={3} maxLength={120} autoComplete="name" placeholder="Your name" /></label></>}
@@ -511,9 +584,11 @@ export function TeacherPortal() {
                     {authMode === "register" && <label className="consent-row"><input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of my account details to provide teacher services.</span></label>}
                     <button className="button button-primary form-submit" type="submit" disabled={busy || (authMode === "register" && !privacyConsent)}>{busy ? <><span className="spinner" /> Please wait…</> : <>{authMode === "signin" ? "Sign in securely" : "Create teacher account"} <span aria-hidden="true">→</span></>}</button>
                   </form>
+                  {authMode === "signin" && <button className="button button-quiet" type="button" onClick={() => { setEmailRecoveryMode(true); setError(""); setNotice(""); }}>Forgot your password?</button>}
+                  </>}
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
-                  <div className="privacy-note"><span aria-hidden="true">⌑</span><p><b>Your class data stays in your section.</b> Access is controlled by your signed-in teacher account.</p></div>
+                  {!recoveryMode && !emailRecoveryMode && <div className="privacy-note"><span aria-hidden="true">⌑</span><p><b>Your class data stays in your section.</b> Access is controlled by your signed-in teacher account.</p></div>}
                 </div>
               </div>
             </section>

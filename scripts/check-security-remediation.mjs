@@ -44,7 +44,7 @@ check('Sensitive forms use POST', forms.length > 0 && forms.every((form) => /\bm
 check('No signed Supabase URL helper in runtime source', !/createSignedUrls?\s*\(/.test(runtimeSource), 'Production runtime no longer returns signed photo URLs.');
 check('Private responses use no-store', proxy.includes('no-store, no-cache, must-revalidate, private') && (await read('lib/server/security.ts')).includes('no-store, no-cache, must-revalidate, private'), 'API and authenticated page responses are marked private and non-cacheable.');
 check('Production browser source maps disabled', /productionBrowserSourceMaps:\s*false/.test(nextConfig), 'Production browser source maps are disabled.');
-check('Sensitive request bodies are read with limits', apiFiles.filter((f) => /students\/(lookup|register|profile-photo|feedback)|api\/contact|api\/parent-feedback/.test(f)).every((f) => /readBodyLimited/.test(requireText(runtimeFiles, f))), 'Sensitive JSON/multipart handlers use streaming size limits.');
+check('Sensitive request bodies are read with limits', apiFiles.filter((f) => /students\/(lookup|register|profile-photo|feedback|reset-pin|recovery-question)|api\/contact|api\/parent-feedback/.test(f)).every((f) => /readBodyLimited/.test(requireText(runtimeFiles, f))), 'Sensitive JSON/multipart handlers use streaming size limits.');
 check('Suspicious code markers absent', !/\b(TODO|FIXME|XXX|HACK|DEBUG)\b/.test(runtimeSource), 'No common developer-only markers found in runtime application source; this is not a substitute for inspecting the exact ZAP response evidence.');
 
 function requireText(_runtimeFiles, filepath) {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readBodyLimited, requestWithBufferedBody } from "@/lib/server/body-limit";
 import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, encryptStudentBirthday, jsonError } from "@/lib/server/security";
+import { allowRequest, digestStudentAccess, digestStudentLrn, digestStudentPin, digestStudentRecoveryAnswer, encryptStudentBirthday, jsonError } from "@/lib/server/security";
 import { getCurrentAcademicYear } from "@/lib/academic-year";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 
@@ -23,6 +23,8 @@ export async function POST(request: Request) {
     const lrn = String(form.get("lrn") ?? "").replace(/\D/g, "");
     const pin = String(form.get("pin") ?? "");
     const birthday = String(form.get("birthday") ?? "");
+    const recoveryQuestion = String(form.get("recoveryQuestion") ?? "").trim().replace(/\s+/g, " ");
+    const recoveryAnswer = String(form.get("recoveryAnswer") ?? "").trim().replace(/\s+/g, " ");
     const sectionId = String(form.get("sectionId") ?? "");
     const gender = String(form.get("gender") ?? "Prefer not to say");
     const privacyConsent = String(form.get("privacyConsent") ?? "") === "accepted";
@@ -36,6 +38,8 @@ export async function POST(request: Request) {
     if (fullName.length < 3 || fullName.length > 120) return jsonError("Enter your full name (3–120 characters).");
     if (lrn.length < 8 || lrn.length > 20) return jsonError("Enter a valid LRN using 8–20 digits.");
     if (!/^\d{4}$/.test(pin)) return jsonError("Choose a 4-digit PIN to protect your grade report.");
+    if (recoveryQuestion.length < 8 || recoveryQuestion.length > 160) return jsonError("Write a recovery question between 8 and 160 characters.");
+    if (recoveryAnswer.length < 2 || recoveryAnswer.length > 120) return jsonError("Enter a recovery answer between 2 and 120 characters.");
     const parsedBirthday = /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? new Date(`${birthday}T00:00:00Z`) : null;
     if (!parsedBirthday || Number.isNaN(parsedBirthday.getTime()) || parsedBirthday.toISOString().slice(0, 10) !== birthday || birthday > new Date().toISOString().slice(0, 10)) {
       return jsonError("Enter a valid birthday.");
@@ -77,6 +81,8 @@ export async function POST(request: Request) {
       access_digest: accessDigest,
       pin_digest: digestStudentPin(pin, accessDigest),
       date_of_birth_encrypted: encryptStudentBirthday(birthday),
+      recovery_question: recoveryQuestion,
+      recovery_answer_digest: digestStudentRecoveryAnswer(recoveryAnswer, studentId),
       gender,
       avatar_path: photoPath,
       section_id: section.id,
@@ -97,7 +103,7 @@ export async function POST(request: Request) {
     if (adviserError) throw adviserError;
 
     return Response.json({
-      message: "Registration received. Use your full name, LRN, and 4-digit PIN to view your grades.",
+      message: "Registration received. Use your full name, LRN, and 4-digit PIN to view your grades. Keep your personal recovery question and answer safe for PIN resets.",
       gradeLevel: section.grade_level,
       sectionName: section.section_name,
       adviserName: adviserProfile?.full_name?.trim() || "Class adviser not listed"

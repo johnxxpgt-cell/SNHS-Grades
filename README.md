@@ -12,10 +12,10 @@ A responsive grade portal for Salvacion National High School. Students register 
 ## Local setup
 
 1. Create a Supabase project.
-2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply pending original migrations first, then [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql), [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql), [`supabase/migrations/20261015_subject_roster_parent_feedback.sql`](supabase/migrations/20261015_subject_roster_parent_feedback.sql), [`supabase/migrations/20261015_terms_mobile_ux.sql`](supabase/migrations/20261015_terms_mobile_ux.sql), and lastly [`supabase/migrations/20261102_teacher_email_domain.sql`](supabase/migrations/20261102_teacher_email_domain.sql). Check which migrations have already been run before applying them.
+2. For a fresh project, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. For an existing installation, apply pending original migrations first, then [`supabase/migrations/20261015_privacy_contact.sql`](supabase/migrations/20261015_privacy_contact.sql), [`supabase/migrations/20261015_class_scorebook.sql`](supabase/migrations/20261015_class_scorebook.sql), [`supabase/migrations/20261015_subject_roster_parent_feedback.sql`](supabase/migrations/20261015_subject_roster_parent_feedback.sql), [`supabase/migrations/20261015_terms_mobile_ux.sql`](supabase/migrations/20261015_terms_mobile_ux.sql), [`supabase/migrations/20261102_teacher_email_domain.sql`](supabase/migrations/20261102_teacher_email_domain.sql), and lastly [`supabase/migrations/20261103_student_pin_recovery.sql`](supabase/migrations/20261103_student_pin_recovery.sql). Check which migrations have already been run before applying them.
 3. Copy [`.env.example`](.env.example) to `.env.local` and configure Supabase URL, browser publishable key, server secret key, stable HMAC, birthday-encryption and contact-encryption keys, canonical URL and the official school privacy contact. Optional Google integrations stay disabled until their values are set.
 4. Install and start the app with `npm ci` and `npm run dev`.
-5. In Supabase Auth, enable email confirmation for teacher accounts and allow the deployed `/auth/callback` URL. In Vercel, explicitly set `NEXT_PUBLIC_APP_URL` to the real canonical production origin and redeploy.
+5. In Supabase Auth, enable email confirmation for teacher accounts and allow the deployed `/auth/callback` URL for both signup and password recovery. In Vercel, explicitly set `NEXT_PUBLIC_APP_URL` to the real canonical production origin and redeploy.
 
 Never put the Supabase server secret, HMAC secret, or AES key in a `NEXT_PUBLIC_` variable. Keep existing HMAC/AES keys stable; rotation requires a migration plan. Do not commit `.env.local`.
 
@@ -32,6 +32,8 @@ Never put the Supabase server secret, HMAC secret, or AES key in a `NEXT_PUBLIC_
 - `/auth/callback` — teacher email confirmation callback (noindex).
 - `/api/sections` — active class sections only.
 - `/api/students/register` — server-side student registration.
+- `/api/students/reset-pin` — birthday-verified PIN recovery with an additional personal answer for new registrations.
+- `/api/students/recovery-question` — authenticated setup for existing students who do not yet have a recovery question.
 - `/api/students/lookup` — server-side grade lookup, class-adviser attribution, and a short-lived feedback ticket.
 - `/api/students/feedback` — privacy-consented parent/guardian feedback routed to the section owner.
 - `/api/parent-feedback` — authenticated teacher inbox API, including new-message count and status workflow.
@@ -71,7 +73,7 @@ The public homepage has clear **Register as a student** and **Teacher sign in** 
 
 ## Private student dashboard update
 
-After a successful student grade lookup with name, LRN, and PIN, the app redirects to `/student/dashboard`. The dashboard uses an HttpOnly signed session cookie so the student can refresh or reopen their report without putting their LRN, PIN, or student ID into a URL. Use **Log out** to clear the session. Grade tables use expandable sections and switch to labeled cards on mobile.
+After a successful student grade lookup with name, LRN, and PIN, the app redirects to `/student/dashboard`. The dashboard uses an HttpOnly signed session cookie so the student can refresh or reopen their report without putting their LRN, PIN, or student ID into a URL. Existing students who have no personal recovery question must set one before their grades open. Use **Log out** to clear the session. Grade tables use expandable sections and switch to labeled cards on mobile.
 
 See `STUDENT_DASHBOARD_SESSION_UPDATE.md` for route behavior, security notes, and deployment checks.
 
@@ -85,4 +87,4 @@ See `REQUEST_ID_QUERY_PARAMETERS.md` for troubleshooting steps.
 
 ## Student profile photos
 
-New student registrations require a profile photo. The browser converts the selected image to WebP before upload; the server independently validates the WebP signature and enforces a 2 MB limit. Students with existing accounts can upload or change their photo from the profile avatar on `/student/dashboard`. Profile uploads require the signed-in student session and are stored in the private `profile-photos` bucket.
+New student registrations require a profile photo. The browser converts the selected image to WebP before upload, using an image-element fallback for browsers without `createImageBitmap`; the server independently validates the WebP signature and enforces a 2 MB limit. Students with existing accounts can upload or change their photo from the profile avatar on `/student/dashboard`. Profile uploads require the signed-in student session and are stored in the private `profile-photos` bucket.

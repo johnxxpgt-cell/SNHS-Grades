@@ -48,6 +48,13 @@ export function digestStudentPin(pin: string, accessDigest: string) {
     .digest("hex");
 }
 
+export function digestStudentRecoveryAnswer(answer: string, studentId: string) {
+  const normalizedAnswer = answer.trim().normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase("en");
+  return createHmac("sha256", secret())
+    .update(`student-recovery-answer\0${studentId}\0${normalizedAnswer}`)
+    .digest("hex");
+}
+
 
 /** Short-lived proof issued only after a successful private student grade lookup. */
 export function createStudentFeedbackTicket(studentId: string, lifetimeSeconds = 900) {
@@ -63,6 +70,31 @@ export function createStudentSessionTicket(studentId: string, lifetimeSeconds = 
   const payload = `${studentId}.${expiresAt}`;
   const signature = createHmac("sha256", secret()).update(`student-session\0${payload}`).digest("base64url");
   return `${payload}.${signature}`;
+}
+
+/** Short-lived proof that a student LRN and exact birthday were verified for a PIN reset. */
+export function createStudentPinResetTicket(studentId: string, lifetimeSeconds = 300) {
+  const expiresAt = Math.floor(Date.now() / 1000) + lifetimeSeconds;
+  const payload = `${studentId}.${expiresAt}`;
+  const signature = createHmac("sha256", secret()).update(`student-pin-reset-ticket\0${payload}`).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+export function verifyStudentPinResetTicket(ticket: string) {
+  if (ticket.length > 256) return null;
+  const parts = ticket.split(".");
+  if (parts.length !== 3) return null;
+  const [studentId, expiryText, signature] = parts;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studentId)) return null;
+  if (!/^\d{10}$/.test(expiryText) || !/^[A-Za-z0-9_-]{40,50}$/.test(signature)) return null;
+  const expiresAt = Number(expiryText);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 301) return null;
+  const payload = `${studentId}.${expiryText}`;
+  const expected = createHmac("sha256", secret()).update(`student-pin-reset-ticket\0${payload}`).digest();
+  const supplied = Buffer.from(signature, "base64url");
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+  return { studentId, expiresAt };
 }
 
 /** Validates the student session cookie; never accepts student IDs from the URL. */
@@ -107,6 +139,22 @@ export function encryptStudentBirthday(birthday: string) {
   const ciphertext = Buffer.concat([cipher.update(birthday, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `v1.${iv.toString("base64url")}.${tag.toString("base64url")}.${ciphertext.toString("base64url")}`;
+}
+
+export function decryptStudentBirthday(envelope: string) {
+  const [version, ivEncoded, tagEncoded, ciphertextEncoded, extra] = envelope.split(".");
+  if (version !== "v1" || !ivEncoded || !tagEncoded || ciphertextEncoded === undefined || extra !== undefined) {
+    throw new Error("Unsupported encrypted birthday format.");
+  }
+  const iv = Buffer.from(ivEncoded, "base64url");
+  const tag = Buffer.from(tagEncoded, "base64url");
+  const ciphertext = Buffer.from(ciphertextEncoded, "base64url");
+  if (iv.length !== 12 || tag.length !== 16) throw new Error("Invalid encrypted birthday envelope.");
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  const birthday = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) throw new Error("Invalid decrypted birthday value.");
+  return birthday;
 }
 
 /** Encrypts arbitrary short text with authenticated AES-256-GCM field encryption. */

@@ -34,6 +34,8 @@ create table if not exists public.students (
   -- PINs are stored as server-keyed HMAC digests; null supports existing records during upgrade.
   pin_digest char(64),
   date_of_birth_encrypted text not null,
+  recovery_question text,
+  recovery_answer_digest text,
   gender text not null check (gender in ('Female', 'Male', 'Prefer not to say')),
   avatar_path text,
   -- Legacy data URLs are retained only so existing student photos remain visible during migration.
@@ -46,6 +48,23 @@ create table if not exists public.students (
 
 alter table public.students add column if not exists privacy_notice_version text;
 alter table public.students add column if not exists privacy_consented_at timestamptz;
+alter table public.students add column if not exists recovery_question text;
+alter table public.students add column if not exists recovery_answer_digest text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.students'::regclass and conname = 'students_recovery_question_pair'
+  ) then
+    alter table public.students add constraint students_recovery_question_pair check (
+      (recovery_question is null and recovery_answer_digest is null)
+      or (recovery_question is not null and char_length(btrim(recovery_question)) between 8 and 160
+          and recovery_answer_digest is not null
+          and char_length(recovery_answer_digest) = 64
+          and recovery_answer_digest ~ '^[0-9a-f]{64}$')
+    );
+  end if;
+end $$;
 
 create table if not exists public.subject_grades (
   id uuid primary key default gen_random_uuid(),
