@@ -413,7 +413,7 @@ export function StudentPortal() {
                     <label className="consent-row"><input type="checkbox" checked={lookupPrivacyConsent} onChange={(event) => setLookupPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and acknowledge that my details will be processed to verify and display my school record.</span></label>
                     <button className="button button-primary form-submit" type="submit" disabled={busy || !lookupPrivacyConsent}>{busy ? <><span className="spinner" /> Looking up grades…</> : <>View my grades <span aria-hidden="true">→</span></>}</button>
                   </form>
-                  {!pinResetOpen ? <button className="button button-outline form-submit" type="button" onClick={() => { setPinResetOpen(true); setPinResetReady(false); setPinResetError(""); setPinResetNotice(""); }}>Forgot your PIN? Reset it with your LRN and exact birthday</button> : (
+                  {!pinResetOpen ? <button className="button button-outline form-submit" type="button" onClick={() => { setPinResetOpen(true); setPinResetReady(false); setPinResetError(""); setPinResetNotice(""); }}>Forgot PIN</button> : (
                     <section className="pin-reset-panel" aria-labelledby="pin-reset-title">
                       <div className="form-heading"><div><span className="form-overline">ACCOUNT RECOVERY</span><h3 id="pin-reset-title">Reset your student PIN</h3></div></div>
                       <p className="form-description">Enter the LRN and exact birthday saved with your school record. Newer registrations also need the personal recovery question and answer they set.</p>

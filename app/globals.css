@@ -56,7 +56,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-action-note { color: #7c8796; font-size: 10px; }
 .button { border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 18px; border-radius: 4px; min-height: 47px; padding: 0 18px; font-size: 11px; font-weight: 700; transition: transform .18s ease, background .18s ease, border-color .18s ease; }
 .button:hover:not(:disabled) { transform: translateY(-1px); }
-.button:disabled { opacity: .6; cursor: wait; }
+.button:disabled { opacity: .6; cursor: not-allowed; }
 .button-primary { color: #fff; background: var(--navy); box-shadow: 0 9px 18px rgba(17, 42, 89, .12); }
 .button-primary:hover:not(:disabled) { background: #1d3b78; }
 .button-primary span:last-child { color: #d3bd8f; font-size: 16px; font-weight: 400; }
@@ -380,7 +380,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .assessment-list-row > strong { color: #45536a; font-size: 9px; white-space: nowrap; }
 .assessment-list-row > strong small { color: #8b95a2; font-size: 7px; font-weight: 500; }
 .assessment-delete { width: 22px; height: 22px; padding: 0; border: 1px solid #e8e8e7; color: #a26459; background: #fff; cursor: pointer; font-size: 15px; line-height: 1; }
-.assessment-delete:disabled { opacity: .45; cursor: wait; }
+.assessment-delete:disabled { opacity: .45; cursor: not-allowed; }
 .assessment-empty { margin: 0; padding: 10px 0; border-top: 1px solid #eff1f2; color: #929ba6; font-size: 8px; }
 .teacher-comment-editor textarea { width: 100%; min-height: 85px; padding: 9px; border: 1px solid #dfe3e7; border-radius: 3px; color: #273750; outline: 0; background: #fff; font: 9px/1.6 var(--sans); resize: vertical; }
 .teacher-comment-editor textarea:focus { border-color: #778ab3; box-shadow: 0 0 0 3px rgba(45, 79, 149, .08); }
@@ -1259,7 +1259,7 @@ body { font-size: 16px; line-height: 1.55; }
 .student-dashboard-brand img { width: 35px; height: 35px; object-fit: contain; }
 .student-dashboard-brand small { display: block; margin-top: 2px; color: #778395; font-size: 9px; font-weight: 700; letter-spacing: .16em; }
 .student-logout-button { min-height: 38px; padding: 0 14px; border: 1px solid #d7dde4; border-radius: 6px; color: #354258; background: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.student-logout-button:disabled { opacity: .6; cursor: wait; }
+.student-logout-button:disabled { opacity: .6; cursor: not-allowed; }
 .student-dashboard-profile { display: flex; align-items: center; gap: 14px; padding: 24px 0 18px; }
 .student-dashboard-avatar { width: 58px; height: 58px; flex: 0 0 58px; border-radius: 50%; object-fit: cover; border: 1px solid #dfe4e9; background: #fff; }
 .student-dashboard-initials { display: grid; place-items: center; color: #263954; background: #e7edf4; font-weight: 800; }
@@ -1352,7 +1352,7 @@ body { font-size: 16px; line-height: 1.55; }
 .student-dashboard-photo-control { position: relative; display: block; width: 58px; height: 58px; flex: 0 0 58px; overflow: hidden; border: 1px solid #dfe4e9; border-radius: 50%; background: #fff; cursor: pointer; }
 .student-dashboard-photo-control .student-dashboard-avatar { display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; object-fit: cover; }
 .student-dashboard-photo-control input { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.student-dashboard-photo-control input:disabled { cursor: wait; }
+.student-dashboard-photo-control input:disabled { cursor: not-allowed; }
 .student-dashboard-photo-overlay { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; padding: 4px; color: #fff; background: rgb(23 43 74 / 82%); font-size: 9px; font-weight: 800; line-height: 1.15; text-align: center; opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
 .student-dashboard-photo-control:hover .student-dashboard-photo-overlay,
 .student-dashboard-photo-control:focus-within .student-dashboard-photo-overlay { opacity: 1; }

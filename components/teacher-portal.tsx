@@ -584,7 +584,7 @@ export function TeacherPortal() {
                     {authMode === "register" && <label className="consent-row"><input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required /><span>I have read the <Link href="/privacy" target="_blank">Privacy Policy</Link> and authorize processing of my account details to provide teacher services.</span></label>}
                     <button className="button button-primary form-submit" type="submit" disabled={busy || (authMode === "register" && !privacyConsent)}>{busy ? <><span className="spinner" /> Please wait…</> : <>{authMode === "signin" ? "Sign in securely" : "Create teacher account"} <span aria-hidden="true">→</span></>}</button>
                   </form>
-                  {authMode === "signin" && <button className="button button-quiet" type="button" onClick={() => { setEmailRecoveryMode(true); setError(""); setNotice(""); }}>Forgot your password?</button>}
+                  {authMode === "signin" && <button className="button button-quiet" type="button" onClick={() => { setEmailRecoveryMode(true); setError(""); setNotice(""); }}>Forgot password</button>}
                   </>}
                   {error && <p className="form-alert error-alert" role="alert">{error}</p>}
                   {notice && <p className="form-alert success-alert" role="status">{notice}</p>}
